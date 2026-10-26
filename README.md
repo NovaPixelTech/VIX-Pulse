@@ -24,7 +24,7 @@ A production-quality, client-side-only dashboard for exploring how stocks, ETFs,
 
 ## Local Development
 
-Requires Node `^20.19.0` or `>=22.12.0`.
+Requires Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`.
 
 ```bash
 npm install
