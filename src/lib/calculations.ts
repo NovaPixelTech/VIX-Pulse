@@ -9,19 +9,17 @@ export interface VIXData {
 
 export function findVixPeaks(vixData: VIXData[]): Array<{ date: string; high: number; index: number }> {
   const peaks: Array<{ date: string; high: number; index: number }> = []
-  
+
   for (let i = 1; i < vixData.length - 1; i++) {
     const curr = vixData[i]
     const prev = vixData[i - 1]
     const next = vixData[i + 1]
-    
-    if (curr.high > VIX_THRESHOLD_PEAK &&
-        curr.high > prev.high &&
-        curr.high > next.high) {
+
+    if (curr.high > VIX_THRESHOLD_PEAK && curr.high > prev.high && curr.high > next.high) {
       peaks.push({ date: curr.date, high: curr.high, index: i })
     }
   }
-  
+
   return peaks
 }
 
@@ -45,9 +43,18 @@ export function calculateDaysBetween(date1: string, date2: string): number {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 }
 
-export function calculateAssetSummary(peaks: any[]) {
-  const validPeaks = peaks.filter(p => p.percentChange !== null)
-  
+interface SummaryPeak {
+  percentChange: number | null
+  daysToRecovery: number | null
+  vixPeakValue: number
+}
+
+export function calculateAssetSummary(peaks: SummaryPeak[]) {
+  const validPeaks = peaks.filter(
+    (p): p is SummaryPeak & { percentChange: number; daysToRecovery: number } =>
+      p.percentChange !== null && p.daysToRecovery !== null,
+  )
+
   if (validPeaks.length === 0) {
     return {
       meanChange: 0,
@@ -56,12 +63,12 @@ export function calculateAssetSummary(peaks: any[]) {
       meanVix: 0,
     }
   }
-  
-  const meanChange = validPeaks.reduce((sum, p) => sum + (p.percentChange || 0), 0) / validPeaks.length
-  const maxChange = Math.max(...validPeaks.map(p => p.percentChange || 0))
-  const meanDays = validPeaks.reduce((sum, p) => sum + (p.daysToRecovery || 0), 0) / validPeaks.length
+
+  const meanChange = validPeaks.reduce((sum, p) => sum + p.percentChange, 0) / validPeaks.length
+  const maxChange = Math.max(...validPeaks.map((p) => p.percentChange))
+  const meanDays = validPeaks.reduce((sum, p) => sum + p.daysToRecovery, 0) / validPeaks.length
   const meanVix = validPeaks.reduce((sum, p) => sum + p.vixPeakValue, 0) / validPeaks.length
-  
+
   return {
     meanChange,
     maxChange,

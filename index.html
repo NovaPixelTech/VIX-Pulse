@@ -1,13 +1,43 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>temp</title>
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#07101d" />
+    <title>VIX Pulse — VIX peaks and asset recovery dashboard</title>
+    <meta
+      name="description"
+      content="Explore how stocks, ETFs and ETCs behaved through VIX volatility peaks. Weekly comparisons, recovery statistics and current VIX regime."
+    />
+    <meta name="author" content="VIX Pulse" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VIX Pulse — VIX peaks and asset recovery dashboard" />
+    <meta
+      property="og:description"
+      content="Weekly VIX and asset performance, recovery statistics and the current volatility regime — all client-side."
+    />
+    <meta property="og:site_name" content="VIX Pulse" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="VIX Pulse" />
+    <meta
+      name="twitter:description"
+      content="Weekly VIX and asset performance, recovery statistics and the current volatility regime."
+    />
+    <script>
+      try {
+        var theme = localStorage.getItem('vix-pulse-theme')
+        document.documentElement.classList.remove('light', 'dark')
+        document.documentElement.classList.add(theme === 'light' ? 'light' : 'dark')
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>VIX Pulse requires JavaScript to display the interactive charts.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-border: hsl(217 33% 17%);
@@ -18,19 +20,26 @@
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --text-gradient-end: #22d3ee;
+  }
+
   .light {
+    color-scheme: light;
     --color-border: hsl(214 32% 91%);
     --color-background: hsl(0 0% 100%);
     --color-foreground: hsl(222 47% 11%);
     --color-card: hsl(0 0% 100%);
     --color-card-foreground: hsl(222 47% 11%);
-    --color-primary: hsl(199 89% 48%);
-    --color-primary-foreground: hsl(210 40% 98%);
-    --color-accent: hsl(142 71% 45%);
+    --color-primary: hsl(200 98% 32%);
+    --color-primary-foreground: hsl(0 0% 100%);
+    --color-accent: hsl(142 72% 29%);
     --color-muted: hsl(210 40% 96%);
-    --color-muted-foreground: hsl(215 16% 47%);
-    --color-destructive: hsl(0 84% 60%);
-    --color-success: hsl(142 71% 45%);
+    --color-muted-foreground: hsl(215 25% 35%);
+    --color-destructive: hsl(0 72% 40%);
+    --color-success: hsl(142 72% 29%);
+    --text-gradient-end: hsl(192 91% 31%);
   }
 
   body {
@@ -42,11 +51,13 @@
 
 @layer utilities {
   .card-glow {
-    box-shadow: 0 0 0 1px var(--color-border), 0 4px 24px -8px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    box-shadow:
+      0 0 0 1px var(--color-border),
+      0 4px 24px -8px color-mix(in srgb, var(--color-primary) 15%, transparent);
   }
 
   .text-gradient {
-    background: linear-gradient(to right, var(--color-primary), #22d3ee);
+    background: linear-gradient(to right, var(--color-primary), var(--text-gradient-end));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

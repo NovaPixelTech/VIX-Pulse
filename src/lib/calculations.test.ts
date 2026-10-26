@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { findVixPeaks, findRecoveryDate, calculatePercentChange, calculateDaysBetween, calculateAssetSummary } from './calculations'
+import {
+  findVixPeaks,
+  findRecoveryDate,
+  calculatePercentChange,
+  calculateDaysBetween,
+  calculateAssetSummary,
+} from './calculations'
 
 describe('VIX Calculations', () => {
   it('finds VIX peaks correctly', () => {
@@ -39,8 +45,24 @@ describe('VIX Calculations', () => {
 
   it('calculates asset summary', () => {
     const peaks = [
-      { vixPeakDate: '2020-03-01', vixPeakValue: 30, assetPriceAtPeak: 100, vixRecoveryDate: '2020-03-05', assetPriceAtRecovery: 110, percentChange: 10, daysToRecovery: 4 },
-      { vixPeakDate: '2020-04-01', vixPeakValue: 35, assetPriceAtPeak: 120, vixRecoveryDate: '2020-04-08', assetPriceAtRecovery: 126, percentChange: 5, daysToRecovery: 7 },
+      {
+        vixPeakDate: '2020-03-01',
+        vixPeakValue: 30,
+        assetPriceAtPeak: 100,
+        vixRecoveryDate: '2020-03-05',
+        assetPriceAtRecovery: 110,
+        percentChange: 10,
+        daysToRecovery: 4,
+      },
+      {
+        vixPeakDate: '2020-04-01',
+        vixPeakValue: 35,
+        assetPriceAtPeak: 120,
+        vixRecoveryDate: '2020-04-08',
+        assetPriceAtRecovery: 126,
+        percentChange: 5,
+        daysToRecovery: 7,
+      },
     ]
     const summary = calculateAssetSummary(peaks)
     expect(summary.meanChange).toBe(7.5)

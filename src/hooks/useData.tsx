@@ -15,26 +15,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('./data/vix-pulse.json')
-      .then(res => {
+    fetch(`${import.meta.env.BASE_URL}data/vix-pulse.json`)
+      .then((res) => {
         if (!res.ok) throw new Error('Failed to load data')
         return res.json()
       })
-      .then(json => {
+      .then((json) => {
         setData(json)
         setLoading(false)
       })
-      .catch(err => {
+      .catch((err) => {
         setError(err.message)
         setLoading(false)
       })
   }, [])
 
-  return (
-    <DataContext.Provider value={{ data, loading, error }}>
-      {children}
-    </DataContext.Provider>
-  )
+  return <DataContext.Provider value={{ data, loading, error }}>{children}</DataContext.Provider>
 }
 
 export function useData() {
