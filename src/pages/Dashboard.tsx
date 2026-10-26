@@ -7,6 +7,7 @@ import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearc
 import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
+import type { Asset } from '@/types'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
 
@@ -123,11 +124,15 @@ export default function Dashboard() {
   }
 
   const filtered = fuzzySearch(search, data.assets)
-  const sorted = [...filtered].sort((a, b) => {
+  const compareAssets = (a: Asset, b: Asset) => {
     const aVal = a.summary[sortKey]
     const bVal = b.summary[sortKey]
     return sortAsc ? aVal - bVal : bVal - aVal
-  })
+  }
+  const sorted = [...filtered].sort(compareAssets)
+  const navigationOrder = [...data.assets].sort(compareAssets).map((asset) => asset.isin)
+  const openAsset = (asset: Asset) =>
+    navigate(`/asset/${asset.isin}`, { state: { assetOrder: navigationOrder } })
 
   const totalAssets = data.assets.length
   const allValidChanges = data.assets.flatMap((asset) =>
@@ -312,15 +317,14 @@ export default function Dashboard() {
                     .filter((p) => p.percentChange !== null)
                     .map((p) => p.percentChange!)
                   const weekly = getWeeklyStats(asset)
-                  const openAsset = () => navigate(`/asset/${asset.isin}`)
                   return (
                     <tr
                       key={asset.isin}
-                      onClick={openAsset}
+                      onClick={() => openAsset(asset)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
-                          openAsset()
+                          openAsset(asset)
                         }
                       }}
                       tabIndex={0}
@@ -385,7 +389,7 @@ export default function Dashboard() {
             return (
               <button
                 key={asset.isin}
-                onClick={() => navigate(`/asset/${asset.isin}`)}
+                onClick={() => openAsset(asset)}
                 className="w-full rounded-xl border border-border bg-card p-4 text-left card-glow transition-colors hover:border-primary/40"
               >
                 <div className="flex items-start justify-between gap-3">

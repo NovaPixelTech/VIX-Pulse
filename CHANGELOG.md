@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.1 - 2026-10-26
+
+### Added
+
+- Previous/next asset controls on Asset Detail for moving through the ranked list without returning to the dashboard.
+- Position indicator, disabled endpoint states, and accessible button labels with the adjacent ticker and name.
+- Focus management and automatic scroll-to-top when switching assets.
+- Unit tests for ranked, stale, duplicate, and direct-link navigation order.
+
+### Changed
+
+- Asset Detail charts now replace the previous chart state cleanly when switching assets.
+- Direct asset links use a stable ticker order until a ranked navigation order is available.
+
+### Fixed
+
+- CI tests now run on Node 24 because `jsdom` 30 and `undici` 8 require native zstd support.
+
 ## v0.2.0 - 2026-10-26
 
 ### Added

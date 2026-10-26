@@ -5,7 +5,7 @@ A production-quality, client-side-only dashboard for exploring how stocks, ETFs,
 ## Features
 
 - **Dashboard**: Global ranking of all 66 assets, search, sortable metrics, weekly closes, 1-week change, and a prominent current/last-week VIX overview with regime colours.
-- **Asset Detail**: Weekly dual-axis VIX/price chart with all peak markers, one label for the largest peak each year, and the full peak-by-peak recovery table.
+- **Asset Detail**: Weekly dual-axis VIX/price chart with all peak markers, one label for the largest peak each year, previous/next asset navigation, and the full peak-by-peak recovery table.
 - **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart and benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
@@ -77,7 +77,7 @@ The workflow in `.github/workflows/deploy.yml` builds on every push to `main` an
 src/
   components/     Layout, skeletons, VIX overview cards
   hooks/          static-data loader and theme provider
-  lib/            calculations, VIX helpers, formatting, tests
+  lib/            calculations, VIX helpers, asset navigation, formatting, tests
   pages/          Dashboard, Asset Detail, Compare, About
 public/data/      generated static dataset
 scripts/          real-data pipeline and offline generators

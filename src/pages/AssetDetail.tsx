@@ -1,9 +1,12 @@
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useTheme } from '@/hooks/useTheme'
+import { orderAssetsForNavigation } from '@/lib/assetNavigation'
+import type { Asset } from '@/types'
 import {
   formatCurrency,
   formatDate,
@@ -17,10 +20,31 @@ import { Skeleton } from '@/components/Skeleton'
 
 export default function AssetDetail() {
   const { isin } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { data, loading } = useData()
   const { theme } = useTheme()
-  const asset = data?.assets.find((a) => a.isin === isin)
+  const navigationState = location.state as { assetOrder?: unknown } | null
+  const preferredOrder = Array.isArray(navigationState?.assetOrder)
+    ? navigationState.assetOrder.filter((value): value is string => typeof value === 'string')
+    : undefined
+  const orderedAssets = orderAssetsForNavigation(data?.assets ?? [], preferredOrder)
+  const assetIndex = orderedAssets.findIndex((candidate) => candidate.isin === isin)
+  const asset = assetIndex >= 0 ? orderedAssets[assetIndex] : undefined
+  const previousAsset = assetIndex > 0 ? orderedAssets[assetIndex - 1] : null
+  const nextAsset =
+    assetIndex >= 0 && assetIndex < orderedAssets.length - 1 ? orderedAssets[assetIndex + 1] : null
   usePageTitle(asset ? `${asset.ticker} — ${asset.name}` : 'Asset detail')
+
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const lastFocusedAssetRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!asset || lastFocusedAssetRef.current === asset.isin) return
+    lastFocusedAssetRef.current = asset.isin
+    window.scrollTo({ top: 0 })
+    headingRef.current?.focus({ preventScroll: true })
+  }, [asset])
 
   if (loading) {
     return (
@@ -79,6 +103,13 @@ export default function AssetDetail() {
   const peakLabelColor = theme === 'dark' ? '#fbbf24' : '#b45309'
   const vixColor = theme === 'dark' ? '#ef4444' : '#dc2626'
   const assetColor = theme === 'dark' ? '#06b6d4' : '#0e7490'
+  const currentAssetNumber = assetIndex + 1
+
+  const goToAsset = (target: Asset) => {
+    navigate(`/asset/${target.isin}`, {
+      state: { assetOrder: orderedAssets.map((candidate) => candidate.isin) },
+    })
+  }
 
   const option = {
     backgroundColor: 'transparent',
@@ -230,16 +261,59 @@ export default function AssetDetail() {
 
   return (
     <div className="space-y-6">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to ranking
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to ranking
+        </Link>
+
+        <nav aria-label="Asset navigation" className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => previousAsset && goToAsset(previousAsset)}
+            disabled={!previousAsset}
+            aria-label={
+              previousAsset
+                ? `Previous asset: ${previousAsset.ticker}, ${previousAsset.name}`
+                : 'No previous asset'
+            }
+            title={previousAsset ? `Previous: ${previousAsset.ticker}` : 'No previous asset'}
+            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground sm:px-3"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{previousAsset?.ticker ?? 'Previous'}</span>
+          </button>
+
+          <span
+            className="min-w-16 text-center text-xs font-medium tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {currentAssetNumber} / {orderedAssets.length}
+          </span>
+
+          <button
+            type="button"
+            onClick={() => nextAsset && goToAsset(nextAsset)}
+            disabled={!nextAsset}
+            aria-label={nextAsset ? `Next asset: ${nextAsset.ticker}, ${nextAsset.name}` : 'No next asset'}
+            title={nextAsset ? `Next: ${nextAsset.ticker}` : 'No next asset'}
+            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground sm:px-3"
+          >
+            <span className="hidden sm:inline">{nextAsset?.ticker ?? 'Next'}</span>
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </nav>
+      </div>
 
       <div>
-        <h1 className="text-3xl sm:text-4xl font-bold">
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-3xl sm:text-4xl font-bold rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+        >
           {asset.ticker} - {asset.name}
         </h1>
         <p className="text-muted-foreground mt-1">
@@ -305,7 +379,7 @@ export default function AssetDetail() {
         role="img"
         aria-label={`${asset.ticker} weekly price and VIX chart with ${annotationPoints.length} VIX peak markers`}
       >
-        <ReactECharts option={option} style={{ height: '440px' }} opts={{ renderer: 'svg' }} />
+        <ReactECharts option={option} style={{ height: '440px' }} opts={{ renderer: 'svg' }} notMerge />
       </div>
 
       <div className="space-y-4">
