@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-const DEFAULT_TITLE = 'VIX Pulse — VIX peaks and asset recovery dashboard'
+const DEFAULT_TITLE = 'VIX Pulse — VIX response and asset recovery analytics'
 
 export function usePageTitle(title?: string) {
   useEffect(() => {

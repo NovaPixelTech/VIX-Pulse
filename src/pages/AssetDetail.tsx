@@ -16,7 +16,14 @@ import {
   getChartTheme,
 } from '@/lib/utils'
 import { getWeeklyStats, nearestWeeklyDate } from '@/lib/vix'
+import {
+  getAssetVixResponse,
+  getMovingAverageSeries,
+  VIX_RESPONSE_PEAK_THRESHOLD,
+  VIX_RESPONSE_RECOVERY_THRESHOLD,
+} from '@/lib/vixResponse'
 import { Skeleton } from '@/components/Skeleton'
+import VixResponsePanel from '@/components/VixResponsePanel'
 
 export default function AssetDetail() {
   const { isin } = useParams()
@@ -73,19 +80,35 @@ export default function AssetDetail() {
   const weekly = getWeeklyStats(asset)
   const dates = asset.priceSeries.dates
   const chart = getChartTheme(theme)
+  const response = getAssetVixResponse(asset)
+  const fourWeekMovingAverage = getMovingAverageSeries(asset, 4)
+  const thirteenWeekMovingAverage = getMovingAverageSeries(asset, 13)
+  const responseEventByDate = new Map(response.events.map((event) => [event.peakDate, event]))
 
   // Peak annotations are kept at their exact calculation dates in the table.
-  // On the weekly chart they are anchored to the nearest week ending.
-  const annotationPoints = asset.peaks
-    .map((peak) => ({
-      week: nearestWeeklyDate(dates, peak.vixPeakDate),
-      peak,
-    }))
+  // On the weekly chart, ordinary peaks share one marker per week; high peaks
+  // retain individual markers so every VIX >25 event remains inspectable.
+  const annotationPoints = asset.peaks.reduce<Array<{ week: string; peak: (typeof asset.peaks)[number] }>>(
+    (points, peak) => {
+      const week = nearestWeeklyDate(dates, peak.vixPeakDate)
+      if (!week) return points
+      const existingIndex = points.findIndex((point) => point.week === week)
+      if (existingIndex === -1) {
+        points.push({ week, peak })
+      } else if (peak.vixPeakValue > points[existingIndex].peak.vixPeakValue) {
+        points[existingIndex] = { week, peak }
+      }
+      return points
+    },
+    [],
+  )
+  const highPeakPoints = asset.peaks
+    .filter((peak) => peak.vixPeakValue > VIX_RESPONSE_PEAK_THRESHOLD)
+    .map((peak) => ({ week: nearestWeeklyDate(dates, peak.vixPeakDate), peak }))
     .filter((point): point is { week: string; peak: (typeof asset.peaks)[number] } => point.week !== null)
-    .filter((point, index, all) => all.findIndex((candidate) => candidate.week === point.week) === index)
 
-  // Every peak stays visible as a marker. Label only the largest peak in each
-  // calendar year so the chart remains readable across the full six-year window.
+  // Label the largest ordinary peak in each year; all VIX >25 peaks receive
+  // their own high-contrast marker and are labeled when chart space permits.
   const yearlyLabelPoints = annotationPoints
     .reduce<Array<{ week: string; peak: (typeof asset.peaks)[number] }>>((acc, point) => {
       const year = point.week.slice(0, 4)
@@ -103,6 +126,8 @@ export default function AssetDetail() {
   const peakLabelColor = theme === 'dark' ? '#fbbf24' : '#b45309'
   const vixColor = theme === 'dark' ? '#ef4444' : '#dc2626'
   const assetColor = theme === 'dark' ? '#06b6d4' : '#0e7490'
+  const recoveryPositiveColor = theme === 'dark' ? '#4ade80' : '#15803d'
+  const recoveryNegativeColor = theme === 'dark' ? '#f87171' : '#b91c1c'
   const currentAssetNumber = assetIndex + 1
 
   const goToAsset = (target: Asset) => {
@@ -116,7 +141,7 @@ export default function AssetDetail() {
     animationDuration: 500,
     title: {
       text: `${asset.ticker} vs VIX`,
-      subtext: `Weekly closes · through ${formatDate(data?.dateRange.to)} · ${annotationPoints.length} peak marks · largest peak each year labeled`,
+      subtext: `Weekly closes · through ${formatDate(data?.dateRange.to)} · ${highPeakPoints.length} VIX >25 peaks · shaded recovery cycles`,
       left: 0,
       top: 0,
       textStyle: { color: chart.text, fontSize: 16, fontWeight: 600 },
@@ -130,7 +155,10 @@ export default function AssetDetail() {
       axisPointer: { type: 'cross' },
     },
     legend: {
-      data: ['VIX', asset.ticker],
+      type: 'scroll',
+      data: ['VIX', asset.ticker, '4W MA', '13W MA', 'VIX >25 peaks'],
+      left: 0,
+      right: 0,
       textStyle: { color: chart.text },
       top: 48,
     },
@@ -210,6 +238,22 @@ export default function AssetDetail() {
           label: { show: false },
           data: yearlyLabelPoints.map((point) => ({ xAxis: point.week })),
         },
+        markArea: {
+          silent: true,
+          label: { show: false },
+          data: response.cycles
+            .filter((cycle) => cycle.startWeek && cycle.endWeek && cycle.representative.reboundPct !== null)
+            .map((cycle) => [
+              {
+                xAxis: cycle.startWeek!,
+                itemStyle: {
+                  color:
+                    cycle.positiveRecovery === true ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                },
+              },
+              { xAxis: cycle.endWeek! },
+            ]),
+        },
       },
       {
         name: asset.ticker,
@@ -220,18 +264,73 @@ export default function AssetDetail() {
         showSymbol: false,
         lineStyle: { color: assetColor, width: 2 },
         itemStyle: { color: assetColor },
+        markPoint: {
+          symbol: 'arrow',
+          symbolSize: [12, 18],
+          data: response.cycles
+            .filter(
+              (cycle) =>
+                cycle.endWeek &&
+                cycle.representative.recoveryPrice !== null &&
+                cycle.representative.reboundPct !== null,
+            )
+            .map((cycle) => {
+              const rebound = cycle.representative.reboundPct!
+              const positive = rebound > 0
+              return {
+                coord: [cycle.endWeek!, cycle.representative.recoveryPrice!],
+                symbolRotate: positive ? 0 : 180,
+                itemStyle: { color: positive ? recoveryPositiveColor : recoveryNegativeColor },
+                label: {
+                  show: true,
+                  position: positive ? 'top' : 'bottom',
+                  formatter: `${rebound >= 0 ? '+' : ''}${rebound.toFixed(1)}%`,
+                  color: positive ? recoveryPositiveColor : recoveryNegativeColor,
+                  fontSize: 10,
+                  fontWeight: 600,
+                },
+              }
+            }),
+          labelLayout: { hideOverlap: true },
+          tooltip: {
+            formatter: (params: { data: { coord: [string, number]; label: { formatter: string } } }) =>
+              `Asset rebound by VIX recovery: ${params.data.label.formatter}<br/>${params.data.coord[0]}`,
+          },
+        },
+      },
+      {
+        name: '4W MA',
+        type: 'line',
+        yAxisIndex: 1,
+        data: fourWeekMovingAverage,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { color: theme === 'dark' ? '#fbbf24' : '#b45309', width: 1.5, type: 'dashed' },
+        itemStyle: { color: theme === 'dark' ? '#fbbf24' : '#b45309' },
+      },
+      {
+        name: '13W MA',
+        type: 'line',
+        yAxisIndex: 1,
+        data: thirteenWeekMovingAverage,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { color: theme === 'dark' ? '#c4b5fd' : '#6d28d9', width: 1.5, type: 'dashed' },
+        itemStyle: { color: theme === 'dark' ? '#c4b5fd' : '#6d28d9' },
       },
       {
         name: 'VIX peaks',
         type: 'scatter',
         yAxisIndex: 0,
-        data: annotationPoints.map(({ week, peak }) => ({
-          value: [week, peak.vixPeakValue],
-          peakValue: peak.vixPeakValue,
-          pct: peak.percentChange,
-          exactDate: peak.vixPeakDate,
-          label: { show: labelWeeks.has(week) },
-        })),
+        data: annotationPoints
+          .filter(({ peak }) => peak.vixPeakValue <= VIX_RESPONSE_PEAK_THRESHOLD)
+          .map(({ week, peak }) => ({
+            value: [week, peak.vixPeakValue],
+            peakValue: peak.vixPeakValue,
+            pct: peak.percentChange,
+            exactDate: peak.vixPeakDate,
+            label: { show: labelWeeks.has(week) },
+          })),
         symbolSize: 6,
         itemStyle: { color: peakLabelColor, borderColor: chart.border, borderWidth: 1 },
         label: {
@@ -240,10 +339,8 @@ export default function AssetDetail() {
           distance: 4,
           fontSize: 9,
           color: peakLabelColor,
-          formatter: (params: { data: { pct: number | null; exactDate: string; peakValue: number } }) =>
-            params.data.pct === null
-              ? `VIX ${params.data.peakValue.toFixed(1)}`
-              : `${params.data.pct >= 0 ? '+' : ''}${params.data.pct.toFixed(1)}%`,
+          formatter: (params: { data: { exactDate: string; peakValue: number } }) =>
+            `VIX ${params.data.peakValue.toFixed(1)}`,
         },
         labelLayout: { hideOverlap: true },
         tooltip: {
@@ -252,9 +349,61 @@ export default function AssetDetail() {
             `VIX peak ${params.data.peakValue.toFixed(2)}<br/>${params.data.exactDate}<br/>` +
             (params.data.pct === null
               ? 'Recovery not reached'
-              : `Asset change ${params.data.pct >= 0 ? '+' : ''}${params.data.pct.toFixed(2)}%`),
+              : `Asset change by recovery: ${params.data.pct >= 0 ? '+' : ''}${params.data.pct.toFixed(2)}%`),
         },
         z: 5,
+      },
+      {
+        name: 'VIX >25 peaks',
+        type: 'scatter',
+        yAxisIndex: 0,
+        data: highPeakPoints.map(({ week, peak }) => ({
+          value: [week, peak.vixPeakValue],
+          peakValue: peak.vixPeakValue,
+          stressMove: responseEventByDate.get(peak.vixPeakDate)?.stressChangePct ?? null,
+          rebound: responseEventByDate.get(peak.vixPeakDate)?.reboundPct ?? null,
+          vixRise: responseEventByDate.get(peak.vixPeakDate)?.vixRisePoints ?? null,
+          exactDate: peak.vixPeakDate,
+        })),
+        symbol: 'diamond',
+        symbolSize: 9,
+        itemStyle: {
+          color: theme === 'dark' ? '#fb7185' : '#b91c1c',
+          borderColor: chart.border,
+          borderWidth: 1,
+        },
+        label: {
+          show: true,
+          position: 'top',
+          distance: 4,
+          fontSize: 8,
+          color: theme === 'dark' ? '#fda4af' : '#991b1b',
+          formatter: (params: { data: { peakValue: number } }) => `VIX ${params.data.peakValue.toFixed(1)}`,
+        },
+        labelLayout: { hideOverlap: true },
+        tooltip: {
+          trigger: 'item',
+          formatter: (params: {
+            data: {
+              exactDate: string
+              peakValue: number
+              stressMove: number | null
+              rebound: number | null
+              vixRise: number | null
+            }
+          }) => {
+            const { data: point } = params
+            const formatChange = (value: number | null) =>
+              value === null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+            return (
+              `VIX peak ${point.peakValue.toFixed(2)}<br/>${point.exactDate}<br/>` +
+              `VIX rise from prior weekly close: ${point.vixRise === null ? '—' : `${point.vixRise.toFixed(2)} pts`}<br/>` +
+              `Asset stress move: ${formatChange(point.stressMove)}<br/>` +
+              `Asset rebound by VIX recovery: ${formatChange(point.rebound)}`
+            )
+          },
+        },
+        z: 6,
       },
     ],
   }
@@ -377,10 +526,26 @@ export default function AssetDetail() {
       <div
         className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow"
         role="img"
-        aria-label={`${asset.ticker} weekly price and VIX chart with ${annotationPoints.length} VIX peak markers`}
+        aria-label={`${asset.ticker} weekly price and VIX chart with ${highPeakPoints.length} VIX peaks above 25, ${response.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
       >
-        <ReactECharts option={option} style={{ height: '440px' }} opts={{ renderer: 'svg' }} notMerge />
+        <ReactECharts option={option} style={{ height: '480px' }} opts={{ renderer: 'svg' }} notMerge />
       </div>
+      <div
+        className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground"
+        aria-label="Chart annotation guide"
+      >
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3 w-4 rounded-sm bg-green-500/20" aria-hidden="true" />
+          Green: asset rose while VIX returned below {VIX_RESPONSE_RECOVERY_THRESHOLD}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3 w-4 rounded-sm bg-red-500/20" aria-hidden="true" />
+          Red: asset did not rise during VIX normalization
+        </span>
+        <span>Arrows show peak-to-recovery asset change; dashed lines show 4W and 13W averages.</span>
+      </div>
+
+      <VixResponsePanel response={response} currency={asset.currency} />
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2">

@@ -5,7 +5,8 @@ A production-quality, client-side-only dashboard for exploring how stocks, ETFs,
 ## Features
 
 - **Dashboard**: Global ranking of all 66 assets, search, sortable metrics, weekly closes, 1-week change, and a prominent current/last-week VIX overview with regime colours.
-- **Asset Detail**: Weekly dual-axis VIX/price chart with all peak markers, one label for the largest peak each year, previous/next asset navigation, and the full peak-by-peak recovery table.
+- **Asset Detail**: Weekly dual-axis VIX/price chart with grouped green/red VIX recovery periods, rebound arrows, 4-week/13-week moving averages, previous/next asset navigation, and per-peak response metrics.
+- **VIX Response**: Searchable, sortable sensitivity ranking for VIX peaks above 25, with a normalized 0–100 score, profit/loss metrics, positive-recovery consistency, and best/worst assets.
 - **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart and benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
@@ -75,10 +76,10 @@ The workflow in `.github/workflows/deploy.yml` builds on every push to `main` an
 
 ```text
 src/
-  components/     Layout, skeletons, VIX overview cards
+  components/     Layout, skeletons, VIX overview, response metrics
   hooks/          static-data loader and theme provider
-  lib/            calculations, VIX helpers, asset navigation, formatting, tests
-  pages/          Dashboard, Asset Detail, Compare, About
+  lib/            calculations, VIX response analytics, navigation, formatting, tests
+  pages/          Dashboard, Asset Detail, Compare, VIX Response, About
 public/data/      generated static dataset
 scripts/          real-data pipeline and offline generators
 ```
@@ -87,9 +88,12 @@ scripts/          real-data pipeline and offline generators
 
 - VIX peak detection uses daily intraday Highs; recoveries and asset values use closes.
 - Daily peak dates are mapped to the nearest week ending for chart annotations.
+- The VIX Response page uses the last weekly close before each peak as its asset baseline. Local peaks sharing a recovery date are grouped for cycle summaries and chart shading; each cycle uses its highest VIX peak, while Asset Detail lists every peak above 25.
+- The response score averages cross-asset percentile ranks for drawdown depth, rebound, positive-recovery rate, and time to regain the baseline. The score is separate from the baseline-to-recovery profit/loss return.
+- 4-week and 13-week moving averages, and time to regain the baseline, are calculated from weekly closes; those timings are weekly estimates rather than daily asset observations.
 - Values remain in each security's quote currency. London-listed pence quotes are divided by 100 and labelled GBP.
 - Current VIX is the latest available daily quote; weekly metrics use the latest completed Friday.
-- Peak events without a VIX recovery below 20 are excluded from summary statistics and marked in the detail table.
+- The legacy peak-recovery summary excludes peaks without a VIX recovery below 20. The VIX Response page retains an unresolved stress cycle as pending, includes available peak measurements, and leaves it unshaded until recovery metrics exist.
 
 ## Disclaimer
 

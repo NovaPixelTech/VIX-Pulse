@@ -94,8 +94,55 @@ export default function About() {
           date.
         </p>
         <p className="text-sm text-muted-foreground">
-          If an asset has no recovery date after a peak (VIX never drops &lt; 20 in the data window), that
-          peak is excluded from calculations and flagged in the UI.
+          The original peak-recovery summary excludes peaks without a VIX close below 20. The VIX Response
+          page keeps an unresolved stress cycle as pending, displays available peak measurements, and does not
+          shade it until recovery data is available.
+        </p>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6 card-glow space-y-4">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">VIX &gt;25 sensitivity response</h2>
+        </div>
+        <p className="text-sm">
+          The Response page evaluates VIX local peaks above 25. The baseline is the last available weekly
+          asset close before each peak. Peaks sharing a VIX recovery date are grouped as one cycle for ranking
+          and chart shading; the highest VIX peak represents that cycle. Asset Detail still lists every
+          individual peak above 25.
+        </p>
+        <ul className="list-disc space-y-2 pl-5 text-sm">
+          <li>
+            <strong>Stress move</strong> = (asset price at VIX peak / baseline price − 1) × 100.
+          </li>
+          <li>
+            <strong>Rebound</strong> = (asset price at VIX recovery / price at peak − 1) × 100.
+          </li>
+          <li>
+            <strong>Cycle profit/loss</strong> = (asset price at VIX recovery / baseline price − 1) × 100.
+          </li>
+          <li>
+            <strong>VIX response ratio</strong> = stress-period asset percentage move / VIX rise in points.
+            Both underlying changes are shown beside the ratio.
+          </li>
+          <li>
+            <strong>Baseline recovery time</strong> is the number of days to the first weekly close at or
+            above the pre-peak baseline, measured within the VIX recovery window.
+          </li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          The 0–100 sensitivity score is the equal-weight average of cross-asset percentile ranks for average
+          peak drawdown depth, average rebound, positive-rebound consistency, and baseline recovery speed.
+          Faster baseline recovery ranks higher; speed is estimated from weekly closes, and missing component
+          data scores zero. Green chart bands mark positive rebounds while VIX returns below 20; red bands
+          mark a zero or negative rebound. Unrecovered VIX cycles are left unshaded until recovery data is
+          available.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          The charts include 4-week and 13-week simple moving averages. Their values and the asset&apos;s
+          percentage distance from each average are summarized at peak and recovery. Minimum, average, and
+          maximum values are calculated from one representative peak per grouped cycle; the detail event table
+          preserves every VIX &gt;25 local peak.
         </p>
       </section>
 

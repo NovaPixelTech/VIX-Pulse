@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.0 - 2026-10-27
+
+### Added
+
+- Dedicated VIX Response page with a sortable sensitivity ranking, score components, profit/loss figures, and best/worst asset summaries.
+- Asset Detail chart bands and directional arrows for grouped VIX recovery windows after peaks above 25.
+- Per-peak VIX response metrics, including the pre-peak baseline, stress move, VIX rise, response ratio, rebound, cycle return, and recovery durations.
+- 4-week and 13-week moving-average lines, values, percentage distances, and minimum/average/maximum summaries.
+- Tests covering response formulas, grouped recovery cycles, weekly averages, baseline recovery timing, and ranking.
+
+### Changed
+
+- Mobile navigation now includes the VIX Response page.
+- Methodology and documentation now describe the response-cycle and sensitivity-score calculations.
+
 ## v0.2.1 - 2026-10-26
 
 ### Added

@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 const AssetDetail = lazy(() => import('./pages/AssetDetail'))
 const Compare = lazy(() => import('./pages/Compare'))
 const About = lazy(() => import('./pages/About'))
+const VixResponse = lazy(() => import('./pages/VixResponse'))
 
 function RouteFallback() {
   return (
@@ -40,6 +41,14 @@ function App() {
                 element={
                   <Suspense fallback={<RouteFallback />}>
                     <Compare />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="response"
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <VixResponse />
                   </Suspense>
                 }
               />
