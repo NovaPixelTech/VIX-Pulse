@@ -8,6 +8,15 @@ export type Peak = {
   daysToRecovery: number | null
 }
 
+export type LatestQuote = {
+  price: number
+  date: string
+  previousPrice: number | null
+  previousDate: string | null
+  changeAbs: number | null
+  changePct: number | null
+}
+
 export type Asset = {
   isin: string
   ticker: string
@@ -22,6 +31,7 @@ export type Asset = {
     meanDays: number
     meanVix: number
   }
+  latestQuote?: LatestQuote | null
   priceSeries: {
     dates: string[]
     vix: (number | null)[]

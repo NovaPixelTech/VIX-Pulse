@@ -185,7 +185,8 @@ export default function Compare() {
       <div>
         <h1 className="text-3xl font-bold">Compare Assets</h1>
         <p className="text-muted-foreground">
-          Select up to {MAX_ASSETS} assets. Weekly performance is shown against VIX, which is always included.
+          Select up to {MAX_ASSETS} assets. Weekly performance is shown against VIX; the table also shows the
+          latest available daily quote when present.
         </p>
       </div>
 
@@ -325,10 +326,12 @@ export default function Compare() {
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px]">
+          <table className="w-full min-w-[980px]">
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left p-3 text-sm font-medium text-muted-foreground">Asset</th>
+                <th className="text-right p-3 text-sm font-medium text-muted-foreground">Latest Quote</th>
+                <th className="text-right p-3 text-sm font-medium text-muted-foreground">1D</th>
                 <th className="text-right p-3 text-sm font-medium text-muted-foreground">Last Week</th>
                 <th className="text-right p-3 text-sm font-medium text-muted-foreground">1W</th>
                 <th className="text-right p-3 text-sm font-medium text-muted-foreground">Mean Change</th>
@@ -340,6 +343,7 @@ export default function Compare() {
             <tbody>
               {selectedAssets.map((asset, idx) => {
                 const weekly = getWeeklyStats(asset)
+                const latestQuote = asset.latestQuote
                 return (
                   <tr key={asset.isin} className="border-t border-border">
                     <td className="p-3">
@@ -353,6 +357,23 @@ export default function Compare() {
                           <p className="truncate text-xs text-muted-foreground">{asset.name}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      {formatCurrency(latestQuote?.price ?? weekly.latest, asset.currency)}
+                      <span className="block text-xs text-muted-foreground">
+                        {latestQuote?.date ? formatDate(latestQuote.date) : 'weekly fallback'}
+                      </span>
+                    </td>
+                    <td
+                      className={`p-3 text-right font-mono ${
+                        latestQuote?.changePct === null || latestQuote?.changePct === undefined
+                          ? 'text-muted-foreground'
+                          : latestQuote.changePct >= 0
+                            ? 'text-success'
+                            : 'text-destructive'
+                      }`}
+                    >
+                      {formatPercent(latestQuote?.changePct)}
                     </td>
                     <td className="p-3 text-right font-mono">
                       {formatCurrency(weekly.latest, asset.currency)}

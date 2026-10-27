@@ -12,6 +12,7 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 import random
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -226,6 +227,36 @@ def calculate_summary(peaks: list[dict]) -> dict:
     }
 
 
+def calculate_latest_quote(daily_close: pd.Series) -> dict | None:
+    """Capture the latest available close and its move versus the prior session."""
+    valid = daily_close.dropna()
+    if valid.empty:
+        return None
+    latest_date = valid.index[-1]
+    latest_price = float(valid.iloc[-1])
+    if len(valid) < 2:
+        return {
+            "price": round(latest_price, 4),
+            "date": latest_date.strftime("%Y-%m-%d"),
+            "previousPrice": None,
+            "previousDate": None,
+            "changeAbs": None,
+            "changePct": None,
+        }
+    previous_date = valid.index[-2]
+    previous_price = float(valid.iloc[-2])
+    change_abs = latest_price - previous_price
+    change_pct = (change_abs / previous_price * 100) if previous_price else 0.0
+    return {
+        "price": round(latest_price, 4),
+        "date": latest_date.strftime("%Y-%m-%d"),
+        "previousPrice": round(previous_price, 4),
+        "previousDate": previous_date.strftime("%Y-%m-%d"),
+        "changeAbs": round(change_abs, 4),
+        "changePct": round(change_pct, 2),
+    }
+
+
 def build_asset(
     isin: str,
     ticker: str,
@@ -310,6 +341,7 @@ def build_asset(
         "exchange": exchange,
         "peaks": peaks,
         "summary": calculate_summary(peaks),
+        "latestQuote": calculate_latest_quote(daily_close),
         "priceSeries": {
             "dates": weekly_dates,
             "vix": weekly_vix,
@@ -422,11 +454,14 @@ def main() -> None:
         "assets": [{k: v for k, v in asset.items() if not k.startswith("_")} for asset in assets],
     }
 
+    placeholders = sum(1 for asset in assets if asset["placeholder"])
+    if placeholders and os.environ.get("VIX_PULSE_FAIL_ON_PLACEHOLDER") == "1":
+        raise SystemExit(f"Refusing to publish market data with {placeholders} placeholder assets")
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with OUTPUT.open("w", encoding="utf-8") as handle:
         json.dump(dataset, handle, indent=2, ensure_ascii=False, allow_nan=False)
 
-    placeholders = sum(1 for asset in assets if asset["placeholder"])
     print(f"\nSaved {len(assets)} assets ({placeholders} placeholders) to {OUTPUT}")
     print(f"Current VIX {vix_metrics['currentVix']} ({vix_metrics['currentDate']}), "
           f"latest closed week {vix_metrics['latestWeekVix']} ({vix_metrics['latestWeekDate']})")

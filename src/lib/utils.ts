@@ -41,6 +41,17 @@ export function formatDate(value: string | null | undefined): string {
   }).format(date)
 }
 
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
 export function formatShortDate(value: string | null | undefined): string {
   if (!value) return '—'
   const date = new Date(`${value}T00:00:00Z`)

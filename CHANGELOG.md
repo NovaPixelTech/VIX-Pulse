@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.1 - 2026-10-27
+
+### Added
+
+- Global refresh button that bypasses browser caching and reloads the latest published market-data snapshot.
+- Latest daily quote and previous-session move for each asset, visible on Dashboard, Compare, and Asset Detail.
+- Weekday post-market data refresh and manual market-data workflow dispatch, with a link from the dashboard.
+- Snapshot generation time and quote dates so users can see the freshness of displayed values.
+
+### Fixed
+
+- Browser reloads no longer reuse a cached static JSON response.
+- Scheduled data updates refuse to publish snapshots containing placeholder assets.
+
 ## v0.3.0 - 2026-10-27
 
 ### Added

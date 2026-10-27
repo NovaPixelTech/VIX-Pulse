@@ -78,6 +78,7 @@ export default function AssetDetail() {
   const meanChange =
     validPeaks.length > 0 ? validPeaks.reduce((s, p) => s + p.percentChange!, 0) / validPeaks.length : 0
   const weekly = getWeeklyStats(asset)
+  const latestQuote = asset.latestQuote
   const dates = asset.priceSeries.dates
   const chart = getChartTheme(theme)
   const response = getAssetVixResponse(asset)
@@ -468,10 +469,28 @@ export default function AssetDetail() {
         <p className="text-muted-foreground mt-1">
           {asset.isin} • {asset.exchange} • {asset.type.toUpperCase()} • {asset.currency}
         </p>
-        <p className="text-sm text-muted-foreground mt-2">
-          Weekly data through {formatDate(data?.dateRange.to)} · latest close{' '}
-          <span className="font-mono text-foreground">{formatCurrency(weekly.latest, asset.currency)}</span> ·
-          1W{' '}
+        <p className="mt-2 text-sm text-muted-foreground">
+          Latest quote{' '}
+          <span className="font-mono text-foreground">
+            {formatCurrency(latestQuote?.price ?? weekly.latest, asset.currency)}
+          </span>
+          {' · '}
+          {latestQuote?.date ? formatDate(latestQuote.date) : 'weekly fallback'}
+          {' · 1D '}
+          <span
+            className={`font-mono ${
+              latestQuote?.changePct === null || latestQuote?.changePct === undefined
+                ? 'text-muted-foreground'
+                : latestQuote.changePct >= 0
+                  ? 'text-success'
+                  : 'text-destructive'
+            }`}
+          >
+            {formatPercent(latestQuote?.changePct)}
+          </span>
+          {' · weekly history through '}
+          <span className="font-mono">{formatDate(data?.dateRange.to)}</span>
+          {' · 1W '}
           <span className={`font-mono ${(weekly.changePct ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
             {formatPercent(weekly.changePct)}
           </span>
@@ -484,7 +503,30 @@ export default function AssetDetail() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-4 card-glow">
+          <p className="text-sm text-muted-foreground">Latest Available Price</p>
+          <p className="text-2xl font-bold font-mono">
+            {formatCurrency(latestQuote?.price ?? weekly.latest, asset.currency)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {latestQuote?.date ? formatDate(latestQuote.date) : 'Weekly fallback'}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 card-glow">
+          <p className="text-sm text-muted-foreground">Daily Change</p>
+          <p
+            className={`text-2xl font-bold font-mono ${
+              latestQuote?.changePct === null || latestQuote?.changePct === undefined
+                ? 'text-muted-foreground'
+                : latestQuote.changePct >= 0
+                  ? 'text-success'
+                  : 'text-destructive'
+            }`}
+          >
+            {formatPercent(latestQuote?.changePct)}
+          </p>
+        </div>
         <div className="rounded-xl border border-border bg-card p-4 card-glow">
           <p className="text-sm text-muted-foreground">Last Weekly Close</p>
           <p className="text-2xl font-bold font-mono">{formatCurrency(weekly.latest, asset.currency)}</p>

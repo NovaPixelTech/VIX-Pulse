@@ -3,7 +3,16 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ['main']
+  schedule:
+    # Refresh after the US market close on weekdays.
+    - cron: '30 22 * * 1-5'
   workflow_dispatch:
+    inputs:
+      refresh_market_data:
+        description: Download and publish the latest VIX and asset quotes before deployment
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -15,11 +24,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  refresh-data:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh_market_data)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+      - name: Install data dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Download and validate market data
+        run: python scripts/fetch_data.py
+        env:
+          VIX_PULSE_FAIL_ON_PLACEHOLDER: '1'
+      - name: Commit refreshed data
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/data/vix-pulse.json
+          if git diff --cached --quiet; then
+            echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: refresh market data"
+            git push origin HEAD:main
+            echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: refresh-data
+    if: always() && (needs.refresh-data.result == 'success' || needs.refresh-data.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.refresh-data.outputs.commit || github.sha }}
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

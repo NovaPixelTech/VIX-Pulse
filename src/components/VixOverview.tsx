@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { ArrowDownRight, ArrowUpRight, CalendarDays, Clock3, Minus } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CalendarDays, Clock3, ExternalLink, Minus } from 'lucide-react'
 import type { Dataset, VixMetrics } from '@/types'
 import { deriveVixMetrics, getVixRegime } from '@/lib/vix'
-import { cn, formatDate, formatNumber, formatPercent } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, formatNumber, formatPercent } from '@/lib/utils'
 
 function ChangeLine({
   absolute,
@@ -168,14 +168,27 @@ export default function VixOverview({ data }: { data: Dataset }) {
             Volatility now
           </h2>
           <p className="text-sm text-muted-foreground">
-            Current VIX plus the weekly series through {formatDate(data.dateRange.to)}.
+            Latest available VIX quote · weekly history through {formatDate(data.dateRange.to)}.
           </p>
         </div>
+        <a
+          href="https://github.com/NovaPixelTech/VIX-Pulse/actions/workflows/deploy.yml"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          Run a new data download
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Snapshot built {formatDateTime(data.generatedAt)} UTC. Refresh reloads the latest published snapshot;
+        a new source download can be started from GitHub Actions.
+      </p>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <VixCard
-          label="VIX today"
+          label="VIX · latest quote"
           value={metrics.currentVix}
           date={metrics.currentDate}
           previous={metrics.previousDayVix}
@@ -183,7 +196,7 @@ export default function VixOverview({ data }: { data: Dataset }) {
           absolute={metrics.changeDayAbs}
           percent={metrics.changeDayPct}
           comparison="previous day"
-          dateLabel="Latest available quote"
+          dateLabel="Latest daily observation"
           icon={<Clock3 className="h-4 w-4" aria-hidden="true" />}
         />
         <VixCard

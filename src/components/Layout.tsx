@@ -1,9 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Moon, Sun, Activity, BarChart3, GitCompare, Info } from 'lucide-react'
+import { Moon, Sun, Activity, BarChart3, GitCompare, Info, RefreshCw } from 'lucide-react'
+import { useData } from '@/hooks/useData'
 import { useTheme } from '@/hooks/useTheme'
 
 export default function Layout() {
   const { theme, toggleTheme } = useTheme()
+  const { data, loading, refreshing, refreshError, refreshData } = useData()
   const location = useLocation()
 
   const navItems = [
@@ -55,19 +57,48 @@ export default function Layout() {
               })}
             </nav>
 
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-2 rounded-lg hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
-              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-            >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                disabled={loading || refreshing}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-wait disabled:opacity-60 sm:px-3"
+                aria-label={refreshing ? 'Refreshing published market data' : 'Refresh published market data'}
+                title="Reload the latest published VIX and asset quote snapshot"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <span className="hidden sm:inline">{refreshing ? 'Refreshing' : 'Refresh'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="rounded-lg p-2 transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              >
+                {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8 pb-24 sm:px-6 md:pb-8 lg:px-8">
+        <div className="sr-only" role="status" aria-live="polite">
+          {refreshing
+            ? 'Refreshing the latest published market data snapshot.'
+            : data
+              ? `Market data snapshot generated ${data.generatedAt}.`
+              : ''}
+        </div>
+        {refreshError && (
+          <div
+            className="mb-6 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
+            Could not refresh the published data snapshot ({refreshError}). The last loaded data remains
+            visible.
+          </div>
+        )}
         <Outlet />
       </main>
 
