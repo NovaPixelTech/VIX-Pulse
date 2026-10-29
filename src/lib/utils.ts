@@ -78,12 +78,13 @@ export function fuzzySearch<T extends { name?: string; ticker?: string; isin?: s
   query: string,
   items: T[],
 ): T[] {
-  if (!query.trim()) return items
-  const q = query.toLowerCase()
-  return items.filter(
-    (item) =>
-      item.name?.toLowerCase().includes(q) ||
-      item.ticker?.toLowerCase().includes(q) ||
-      item.isin?.toLowerCase().includes(q),
-  )
+  const trimmed = query.trim()
+  if (!trimmed) return items
+  const q = trimmed.toLowerCase()
+  return items.filter((item) => {
+    const name = item.name?.toLowerCase() ?? ''
+    const ticker = item.ticker?.toLowerCase() ?? ''
+    const isin = item.isin?.toLowerCase() ?? ''
+    return name.includes(q) || ticker.includes(q) || isin.includes(q) || ticker === q || isin === q
+  })
 }
