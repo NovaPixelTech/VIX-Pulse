@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
@@ -17,6 +17,7 @@ import {
 } from '@/lib/utils'
 import { getWeeklyStats, nearestWeeklyDate } from '@/lib/vix'
 import {
+  computePeaksForAsset,
   getAssetVixResponse,
   getMovingAverageSeries,
   VIX_RESPONSE_PEAK_THRESHOLD,
@@ -43,6 +44,9 @@ export default function AssetDetail() {
     assetIndex >= 0 && assetIndex < orderedAssets.length - 1 ? orderedAssets[assetIndex + 1] : null
   usePageTitle(asset ? `${asset.ticker} — ${asset.name}` : 'Asset detail')
 
+  const [peakThreshold, setPeakThreshold] = useState(VIX_RESPONSE_PEAK_THRESHOLD)
+  const [recoveryThreshold, setRecoveryThreshold] = useState(VIX_RESPONSE_RECOVERY_THRESHOLD)
+
   const headingRef = useRef<HTMLHeadingElement>(null)
   const lastFocusedAssetRef = useRef<string | null>(null)
 
@@ -52,6 +56,28 @@ export default function AssetDetail() {
     window.scrollTo({ top: 0 })
     headingRef.current?.focus({ preventScroll: true })
   }, [asset])
+
+  const simulatedPeaks = useMemo(
+    () => (asset ? computePeaksForAsset(asset, peakThreshold, recoveryThreshold) : []),
+    [asset, peakThreshold, recoveryThreshold],
+  )
+  const validPeaks = simulatedPeaks.filter((p) => p.percentChange !== null)
+  const meanChange =
+    validPeaks.length > 0 ? validPeaks.reduce((s, p) => s + p.percentChange!, 0) / validPeaks.length : 0
+  const weekly = asset
+    ? getWeeklyStats(asset)
+    : { latest: null, previous: null, changeAbs: null, changePct: null }
+  const latestQuote = asset?.latestQuote
+  const dates = asset?.priceSeries.dates ?? []
+  const chart = getChartTheme(theme)
+  const response = useMemo(
+    () =>
+      asset
+        ? getAssetVixResponse(asset, peakThreshold, recoveryThreshold)
+        : getAssetVixResponse({} as Asset, peakThreshold, recoveryThreshold),
+    [asset, peakThreshold, recoveryThreshold],
+  )
+  const safeResponse = asset ? response : null
 
   if (loading) {
     return (
@@ -63,7 +89,7 @@ export default function AssetDetail() {
     )
   }
 
-  if (!asset) {
+  if (!asset || !safeResponse) {
     return (
       <div className="text-center py-16">
         <p className="text-destructive text-lg">Asset not found</p>
@@ -73,45 +99,35 @@ export default function AssetDetail() {
       </div>
     )
   }
-
-  const validPeaks = asset.peaks.filter((p) => p.percentChange !== null)
-  const meanChange =
-    validPeaks.length > 0 ? validPeaks.reduce((s, p) => s + p.percentChange!, 0) / validPeaks.length : 0
-  const weekly = getWeeklyStats(asset)
-  const latestQuote = asset.latestQuote
-  const dates = asset.priceSeries.dates
-  const chart = getChartTheme(theme)
-  const response = getAssetVixResponse(asset)
   const fourWeekMovingAverage = getMovingAverageSeries(asset, 4)
   const thirteenWeekMovingAverage = getMovingAverageSeries(asset, 13)
-  const responseEventByDate = new Map(response.events.map((event) => [event.peakDate, event]))
+  const responseEventByDate = new Map(safeResponse.events.map((event) => [event.peakDate, event]))
 
   // Peak annotations are kept at their exact calculation dates in the table.
   // On the weekly chart, ordinary peaks share one marker per week; high peaks
   // retain individual markers so every VIX >25 event remains inspectable.
-  const annotationPoints = asset.peaks.reduce<Array<{ week: string; peak: (typeof asset.peaks)[number] }>>(
-    (points, peak) => {
-      const week = nearestWeeklyDate(dates, peak.vixPeakDate)
-      if (!week) return points
-      const existingIndex = points.findIndex((point) => point.week === week)
-      if (existingIndex === -1) {
-        points.push({ week, peak })
-      } else if (peak.vixPeakValue > points[existingIndex].peak.vixPeakValue) {
-        points[existingIndex] = { week, peak }
-      }
-      return points
-    },
-    [],
-  )
-  const highPeakPoints = asset.peaks
-    .filter((peak) => peak.vixPeakValue > VIX_RESPONSE_PEAK_THRESHOLD)
+  const annotationPoints = simulatedPeaks.reduce<
+    Array<{ week: string; peak: (typeof simulatedPeaks)[number] }>
+  >((points, peak) => {
+    const week = nearestWeeklyDate(dates, peak.vixPeakDate)
+    if (!week) return points
+    const existingIndex = points.findIndex((point) => point.week === week)
+    if (existingIndex === -1) {
+      points.push({ week, peak })
+    } else if (peak.vixPeakValue > points[existingIndex].peak.vixPeakValue) {
+      points[existingIndex] = { week, peak }
+    }
+    return points
+  }, [])
+  const highPeakPoints = simulatedPeaks
+    .filter((peak) => peak.vixPeakValue > peakThreshold)
     .map((peak) => ({ week: nearestWeeklyDate(dates, peak.vixPeakDate), peak }))
-    .filter((point): point is { week: string; peak: (typeof asset.peaks)[number] } => point.week !== null)
+    .filter((point): point is { week: string; peak: (typeof simulatedPeaks)[number] } => point.week !== null)
 
   // Label the largest ordinary peak in each year; all VIX >25 peaks receive
   // their own high-contrast marker and are labeled when chart space permits.
   const yearlyLabelPoints = annotationPoints
-    .reduce<Array<{ week: string; peak: (typeof asset.peaks)[number] }>>((acc, point) => {
+    .reduce<Array<{ week: string; peak: (typeof annotationPoints)[number]['peak'] }>>((acc, point) => {
       const year = point.week.slice(0, 4)
       const existingIndex = acc.findIndex((candidate) => candidate.week.startsWith(year))
       if (existingIndex === -1) {
@@ -123,7 +139,7 @@ export default function AssetDetail() {
     }, [])
     .sort((a, b) => a.week.localeCompare(b.week))
   const labelWeeks = new Set(yearlyLabelPoints.map((point) => point.week))
-  const newestPeaks = [...asset.peaks].reverse()
+  const newestPeaks = [...simulatedPeaks].reverse()
   const peakLabelColor = theme === 'dark' ? '#fbbf24' : '#b45309'
   const vixColor = theme === 'dark' ? '#ef4444' : '#dc2626'
   const assetColor = theme === 'dark' ? '#06b6d4' : '#0e7490'
@@ -142,7 +158,7 @@ export default function AssetDetail() {
     animationDuration: 500,
     title: {
       text: `${asset.ticker} vs VIX`,
-      subtext: `Weekly closes · through ${formatDate(data?.dateRange.to)} · ${highPeakPoints.length} VIX >25 peaks · shaded recovery cycles`,
+      subtext: `Weekly closes · through ${formatDate(data?.dateRange.to)} · ${highPeakPoints.length} VIX > ${peakThreshold.toFixed(1)} peaks · shaded recovery cycles`,
       left: 0,
       top: 0,
       textStyle: { color: chart.text, fontSize: 16, fontWeight: 600 },
@@ -157,7 +173,7 @@ export default function AssetDetail() {
     },
     legend: {
       type: 'scroll',
-      data: ['VIX', asset.ticker, '4W MA', '13W MA', 'VIX >25 peaks'],
+      data: ['VIX', asset.ticker, '4W MA', '13W MA', `VIX >${peakThreshold.toFixed(1)} peaks`],
       left: 0,
       right: 0,
       textStyle: { color: chart.text },
@@ -242,7 +258,7 @@ export default function AssetDetail() {
         markArea: {
           silent: true,
           label: { show: false },
-          data: response.cycles
+          data: safeResponse.cycles
             .filter((cycle) => cycle.startWeek && cycle.endWeek && cycle.representative.reboundPct !== null)
             .map((cycle) => [
               {
@@ -268,7 +284,7 @@ export default function AssetDetail() {
         markPoint: {
           symbol: 'arrow',
           symbolSize: [12, 18],
-          data: response.cycles
+          data: safeResponse.cycles
             .filter(
               (cycle) =>
                 cycle.endWeek &&
@@ -324,7 +340,7 @@ export default function AssetDetail() {
         type: 'scatter',
         yAxisIndex: 0,
         data: annotationPoints
-          .filter(({ peak }) => peak.vixPeakValue <= VIX_RESPONSE_PEAK_THRESHOLD)
+          .filter(({ peak }) => peak.vixPeakValue <= peakThreshold)
           .map(({ week, peak }) => ({
             value: [week, peak.vixPeakValue],
             peakValue: peak.vixPeakValue,
@@ -355,7 +371,7 @@ export default function AssetDetail() {
         z: 5,
       },
       {
-        name: 'VIX >25 peaks',
+        name: `VIX >${peakThreshold.toFixed(1)} peaks`,
         type: 'scatter',
         yAxisIndex: 0,
         data: highPeakPoints.map(({ week, peak }) => ({
@@ -568,7 +584,7 @@ export default function AssetDetail() {
       <div
         className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow"
         role="img"
-        aria-label={`${asset.ticker} weekly price and VIX chart with ${highPeakPoints.length} VIX peaks above 25, ${response.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
+        aria-label={`${asset.ticker} weekly price and VIX chart with ${highPeakPoints.length} VIX peaks above ${peakThreshold}, ${safeResponse.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
       >
         <ReactECharts option={option} style={{ height: '480px' }} opts={{ renderer: 'svg' }} notMerge />
       </div>
@@ -578,7 +594,7 @@ export default function AssetDetail() {
       >
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-4 rounded-sm bg-green-500/20" aria-hidden="true" />
-          Green: asset rose while VIX returned below {VIX_RESPONSE_RECOVERY_THRESHOLD}
+          Green: asset rose while VIX returned below {recoveryThreshold}
         </span>
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-4 rounded-sm bg-red-500/20" aria-hidden="true" />
@@ -587,14 +603,208 @@ export default function AssetDetail() {
         <span>Arrows show peak-to-recovery asset change; dashed lines show 4W and 13W averages.</span>
       </div>
 
-      <VixResponsePanel response={response} currency={asset.currency} />
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold">Interactive VIX Stress Test</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Adjust the peak and recovery thresholds to simulate how the analysis changes in real time. The
+              chart, response panel, and table below update instantly.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div className="space-y-2 min-w-[240px]">
+              <div className="flex items-center justify-between">
+                <label htmlFor="peak-threshold" className="font-medium">
+                  VIX peak threshold
+                </label>
+                <span className="font-mono text-muted-foreground">{peakThreshold.toFixed(1)}</span>
+              </div>
+              <input
+                id="peak-threshold"
+                type="range"
+                min={15}
+                max={40}
+                step={0.5}
+                value={peakThreshold}
+                onChange={(e) => setPeakThreshold(Number(e.target.value))}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Peaks detected when weekly VIX is above this value.
+              </p>
+            </div>
+            <div className="space-y-2 min-w-[240px]">
+              <div className="flex items-center justify-between">
+                <label htmlFor="recovery-threshold" className="font-medium">
+                  VIX recovery threshold
+                </label>
+                <span className="font-mono text-muted-foreground">{recoveryThreshold.toFixed(1)}</span>
+              </div>
+              <input
+                id="recovery-threshold"
+                type="range"
+                min={12}
+                max={peakThreshold}
+                step={0.5}
+                value={Math.min(recoveryThreshold, peakThreshold)}
+                onChange={(e) => setRecoveryThreshold(Number(e.target.value))}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Recovery is the first week VIX falls below this value.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Simulated peaks</p>
+            <p className="mt-1 text-xl font-bold font-mono">{simulatedPeaks.length}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Peaks with recovery</p>
+            <p className="mt-1 text-xl font-bold font-mono">{response.recoveredCycleCount}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Positive recoveries</p>
+            <p className="mt-1 text-xl font-bold font-mono">{response.positiveRecoveryCount}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Positive recovery rate</p>
+            <p className="mt-1 text-xl font-bold font-mono">
+              {response.positiveRecoveryRatePct === null
+                ? '—'
+                : `${response.positiveRecoveryRatePct.toFixed(1)}%`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <VixResponsePanel response={safeResponse} currency={asset.currency} />
+
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold">Simple Explanation of All Factors & Indicators</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Plain-English definitions for rookies, with formulas and how each metric is calculated for this
+              asset.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-border bg-background/40 p-4 space-y-2">
+            <h3 className="font-semibold">VIX Stress Test Controls</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">Peak threshold (VIX):</span> A local VIX high is
+                counted as a “stress peak” if VIX is above this value and higher than the week before/after.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Recovery threshold (VIX):</span> The cycle ends
+                at the first week when VIX falls below this value. If it never happens, the peak is marked as
+                unrecovered.
+              </li>
+            </ul>
+          </div>
+          <div className="rounded-lg border border-border bg-background/40 p-4 space-y-2">
+            <h3 className="font-semibold">Timing & Baseline</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">Baseline date/price:</span> The last weekly
+                close before the VIX peak with valid price data.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Days to VIX recovery:</span> Calendar days from
+                peak date to recovery date (based on the peak/recovery thresholds).
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Days to baseline recovery:</span> Days until the
+                asset price returns to or above the baseline price after a drawdown.
+              </li>
+            </ul>
+          </div>
+          <div className="rounded-lg border border-border bg-background/40 p-4 space-y-2">
+            <h3 className="font-semibold">Drawdown & Response</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">VIX rise (pts/%):</span> How much VIX increased
+                from baseline to peak (pts = peak VIX - baseline VIX).
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Stress change / drawdown:</span> Asset move from
+                baseline to peak. Drawdown % = max(0, - (peak/baseline-1)*100).
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Response ratio:</span> (Stress change %) ÷ (VIX
+                rise pts). A lower (more negative) ratio often means larger drop per point of VIX.
+              </li>
+            </ul>
+          </div>
+          <div className="rounded-lg border border-border bg-background/40 p-4 space-y-2">
+            <h3 className="font-semibold">Recovery & Averages</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">Rebound %:</span> (Price at recovery / Price at
+                peak - 1)*100. &gt;0 means the asset rose from its peak level by VIX recovery.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Cycle return %:</span> (Price at recovery /
+                Baseline price - 1)*100. Shows total return from baseline through recovery.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">4W/13W MA & vs MA:</span> Simple moving averages
+                of weekly closes; “price vs MA %” = (price/MA - 1)*100 (above MA = positive).
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="rounded-lg border border-border bg-background/40 p-4 space-y-2">
+          <h3 className="font-semibold">Current simulated values for this asset</h3>
+          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex items-center justify-between rounded border border-border/70 px-2 py-1">
+              <span className="text-muted-foreground">Mean drawdown</span>
+              <span className="font-mono">
+                {safeResponse.stats.drawdownPct.average === null
+                  ? '—'
+                  : `${safeResponse.stats.drawdownPct.average.toFixed(2)}%`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded border border-border/70 px-2 py-1">
+              <span className="text-muted-foreground">Mean rebound</span>
+              <span className="font-mono">
+                {safeResponse.stats.reboundPct.average === null
+                  ? '—'
+                  : `${safeResponse.stats.reboundPct.average >= 0 ? '+' : ''}${safeResponse.stats.reboundPct.average.toFixed(2)}%`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded border border-border/70 px-2 py-1">
+              <span className="text-muted-foreground">Mean cycle return</span>
+              <span className="font-mono">
+                {safeResponse.stats.cycleReturnPct.average === null
+                  ? '—'
+                  : `${safeResponse.stats.cycleReturnPct.average >= 0 ? '+' : ''}${safeResponse.stats.cycleReturnPct.average.toFixed(2)}%`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded border border-border/70 px-2 py-1">
+              <span className="text-muted-foreground">Mean days to VIX recovery</span>
+              <span className="font-mono">
+                {safeResponse.stats.daysToVixRecovery.average === null
+                  ? '—'
+                  : `${safeResponse.stats.daysToVixRecovery.average.toFixed(1)}`}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <h2 className="text-xl font-bold">VIX Peaks Analysis</h2>
+          <h2 className="text-xl font-bold">VIX Peaks Analysis (Simulated)</h2>
           <p className="text-xs text-muted-foreground">
-            {asset.peaks.length} local VIX highs above 21 · {validPeaks.length} with a recovery below 20 ·
-            most recent first
+            {simulatedPeaks.length} peaks above {peakThreshold.toFixed(1)} · {validPeaks.length} with a
+            recovery below {Math.min(recoveryThreshold, peakThreshold).toFixed(1)} · most recent first
           </p>
         </div>
         <div className="overflow-hidden rounded-xl border border-border bg-card card-glow">

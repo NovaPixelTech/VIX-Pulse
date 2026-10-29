@@ -3,6 +3,101 @@ import type { Asset, Peak } from '@/types'
 export const VIX_RESPONSE_PEAK_THRESHOLD = 25
 export const VIX_RESPONSE_RECOVERY_THRESHOLD = 20
 
+export type VixThresholds = {
+  peakThreshold: number
+  recoveryThreshold: number
+}
+
+export function computePeaksForAsset(
+  asset: Asset,
+  peakThreshold: number = VIX_RESPONSE_PEAK_THRESHOLD,
+  recoveryThreshold: number = VIX_RESPONSE_RECOVERY_THRESHOLD,
+): Peak[] {
+  const { dates, vix, price } = asset.priceSeries
+  const peaks: Peak[] = []
+
+  for (let i = 1; i < dates.length - 1; i++) {
+    const currentVix = vix[i]
+    if (currentVix === null || currentVix === undefined) continue
+    if (currentVix <= peakThreshold) continue
+    const prevVix = vix[i - 1]
+    const nextVix = vix[i + 1]
+    if (prevVix !== null && prevVix !== undefined && currentVix <= prevVix) continue
+    if (nextVix !== null && nextVix !== undefined && currentVix <= nextVix) continue
+
+    const peakPrice = price[i]
+    if (peakPrice === null || peakPrice === undefined || peakPrice <= 0) continue
+
+    let recoveryDate: string | null = null
+    for (let j = i; j < dates.length; j++) {
+      const v = vix[j]
+      if (v !== null && v !== undefined && v < recoveryThreshold) {
+        recoveryDate = dates[j]
+        break
+      }
+    }
+
+    if (recoveryDate === null) {
+      peaks.push({
+        vixPeakDate: dates[i],
+        vixPeakValue: Number(currentVix.toFixed(2)),
+        assetPriceAtPeak: Number(peakPrice.toFixed(4)),
+        vixRecoveryDate: null,
+        assetPriceAtRecovery: null,
+        percentChange: null,
+        daysToRecovery: null,
+      })
+      continue
+    }
+
+    const recoveryIndex = dates.indexOf(recoveryDate)
+    if (recoveryIndex < 0) {
+      peaks.push({
+        vixPeakDate: dates[i],
+        vixPeakValue: Number(currentVix.toFixed(2)),
+        assetPriceAtPeak: Number(peakPrice.toFixed(4)),
+        vixRecoveryDate: null,
+        assetPriceAtRecovery: null,
+        percentChange: null,
+        daysToRecovery: null,
+      })
+      continue
+    }
+
+    const recoveryPrice = price[recoveryIndex]
+    if (recoveryPrice === null || recoveryPrice === undefined) {
+      peaks.push({
+        vixPeakDate: dates[i],
+        vixPeakValue: Number(currentVix.toFixed(2)),
+        assetPriceAtPeak: Number(peakPrice.toFixed(4)),
+        vixRecoveryDate: null,
+        assetPriceAtRecovery: null,
+        percentChange: null,
+        daysToRecovery: null,
+      })
+      continue
+    }
+
+    const percentChange = ((recoveryPrice - peakPrice) / peakPrice) * 100
+    const daysToRecovery = Math.max(
+      0,
+      Math.round((Date.parse(`${recoveryDate}T00:00:00Z`) - Date.parse(`${dates[i]}T00:00:00Z`)) / 86400000),
+    )
+
+    peaks.push({
+      vixPeakDate: dates[i],
+      vixPeakValue: Number(currentVix.toFixed(2)),
+      assetPriceAtPeak: Number(peakPrice.toFixed(4)),
+      vixRecoveryDate: recoveryDate,
+      assetPriceAtRecovery: Number(recoveryPrice.toFixed(4)),
+      percentChange: Number(percentChange.toFixed(2)),
+      daysToRecovery,
+    })
+  }
+
+  return peaks.sort((a, b) => a.vixPeakDate.localeCompare(b.vixPeakDate))
+}
+
 export type MetricSummary = {
   min: number | null
   average: number | null
@@ -380,16 +475,29 @@ function getCycles(events: VixResponseEvent[]): VixResponseCycle[] {
     .sort((left, right) => left.representative.peakDate.localeCompare(right.representative.peakDate))
 }
 
-export function getAssetVixResponse(asset: Asset): AssetVixResponse {
-  const events = asset.peaks
-    .filter(
-      (peak) =>
-        peak.vixPeakValue > VIX_RESPONSE_PEAK_THRESHOLD &&
-        isFiniteNumber(peak.assetPriceAtPeak) &&
-        peak.assetPriceAtPeak > 0,
-    )
-    .sort((left, right) => left.vixPeakDate.localeCompare(right.vixPeakDate))
-    .map((peak) => buildEvent(asset, peak))
+export function getAssetVixResponse(
+  asset: Asset,
+  peakThreshold: number = VIX_RESPONSE_PEAK_THRESHOLD,
+  recoveryThreshold: number = VIX_RESPONSE_RECOVERY_THRESHOLD,
+  useStoredPeaks: boolean = true,
+): AssetVixResponse {
+  const peaks =
+    useStoredPeaks && Array.isArray(asset.peaks) && asset.peaks.length > 0
+      ? asset.peaks
+          .filter(
+            (peak) =>
+              peak.vixPeakValue > peakThreshold &&
+              isFiniteNumber(peak.assetPriceAtPeak) &&
+              peak.assetPriceAtPeak > 0,
+          )
+          .sort((left, right) => left.vixPeakDate.localeCompare(right.vixPeakDate))
+      : computePeaksForAsset(asset, peakThreshold, recoveryThreshold).filter(
+          (peak) =>
+            peak.vixPeakValue > peakThreshold &&
+            isFiniteNumber(peak.assetPriceAtPeak) &&
+            peak.assetPriceAtPeak > 0,
+        )
+  const events = peaks.map((peak) => buildEvent(asset, peak))
   const cycles = getCycles(events)
   const representativeEvents = cycles.map((cycle) => cycle.representative)
   const recoveredCycles = cycles.filter(
@@ -439,8 +547,15 @@ function averageDefined(values: Array<number | null>): number {
   return defined.length ? defined.reduce((sum, value) => sum + value, 0) / defined.length : 0
 }
 
-export function rankVixResponses(assets: Asset[]): RankedVixResponse[] {
-  const results = assets.map((asset) => ({ asset, ...getAssetVixResponse(asset) }))
+export function rankVixResponses(
+  assets: Asset[],
+  peakThreshold: number = VIX_RESPONSE_PEAK_THRESHOLD,
+  recoveryThreshold: number = VIX_RESPONSE_RECOVERY_THRESHOLD,
+): RankedVixResponse[] {
+  const results = assets.map((asset) => ({
+    asset,
+    ...getAssetVixResponse(asset, peakThreshold, recoveryThreshold),
+  }))
   const scoreInputs = results.map((result) => ({
     drawdown: result.stats.drawdownPct.average,
     rebound: result.stats.reboundPct.average,
