@@ -686,6 +686,66 @@ export default function AssetDetail() {
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
+            <h2 className="text-xl font-bold">Additional Factors (VIX &gt; {peakThreshold.toFixed(1)})</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Factor 1: Asset price change from VIX peak to next VIX peak (&gt; {peakThreshold.toFixed(1)}),
+              expressed as % per day (average across cycles). Factor 2: Weeks/days to reach
+              +10%/+15%/+20%/+25% from peak price, averaged across cycles.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Avg rate to next peak</p>
+            <p className="mt-1 text-lg font-bold font-mono">
+              {safeResponse.stats.avgRateToNextPeak?.average === null ||
+              safeResponse.stats.avgRateToNextPeak?.average === undefined
+                ? '—'
+                : `${safeResponse.stats.avgRateToNextPeak.average >= 0 ? '+' : ''}${safeResponse.stats.avgRateToNextPeak.average.toFixed(3)}%/day`}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Avg days to +10%</p>
+            <p className="mt-1 text-lg font-bold font-mono">
+              {safeResponse.stats.avgDaysTo10Pct?.average === null ||
+              safeResponse.stats.avgDaysTo10Pct?.average === undefined
+                ? '—'
+                : safeResponse.stats.avgDaysTo10Pct.average.toFixed(1)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Avg days to +15%</p>
+            <p className="mt-1 text-lg font-bold font-mono">
+              {safeResponse.stats.avgDaysTo15Pct?.average === null ||
+              safeResponse.stats.avgDaysTo15Pct?.average === undefined
+                ? '—'
+                : safeResponse.stats.avgDaysTo15Pct.average.toFixed(1)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Avg days to +20%</p>
+            <p className="mt-1 text-lg font-bold font-mono">
+              {safeResponse.stats.avgDaysTo20Pct?.average === null ||
+              safeResponse.stats.avgDaysTo20Pct?.average === undefined
+                ? '—'
+                : safeResponse.stats.avgDaysTo20Pct.average.toFixed(1)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-background/50 p-3">
+            <p className="text-xs text-muted-foreground">Avg days to +25%</p>
+            <p className="mt-1 text-lg font-bold font-mono">
+              {safeResponse.stats.avgDaysTo25Pct?.average === null ||
+              safeResponse.stats.avgDaysTo25Pct?.average === undefined
+                ? '—'
+                : safeResponse.stats.avgDaysTo25Pct.average.toFixed(1)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
             <h2 className="text-xl font-bold">Simple Explanation of All Factors & Indicators</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Plain-English definitions for rookies, with formulas and how each metric is calculated for this
@@ -809,7 +869,7 @@ export default function AssetDetail() {
         </div>
         <div className="overflow-hidden rounded-xl border border-border bg-card card-glow">
           <div className="max-h-[36rem] overflow-auto">
-            <table className="w-full min-w-[840px]">
+            <table className="w-full min-w-[1100px]">
               <thead className="sticky top-0 z-10 bg-card">
                 <tr>
                   <th className="text-left p-3 text-sm font-medium text-muted-foreground">Peak Date</th>
@@ -823,36 +883,64 @@ export default function AssetDetail() {
                   <th className="text-right p-3 text-sm font-medium text-muted-foreground">
                     Days to Recovery
                   </th>
+                  <th className="text-right p-3 text-sm font-medium text-muted-foreground">
+                    Rate to next VIX peak (%/day)
+                  </th>
+                  <th className="text-right p-3 text-sm font-medium text-muted-foreground">Days to +10%</th>
+                  <th className="text-right p-3 text-sm font-medium text-muted-foreground">Days to +15%</th>
+                  <th className="text-right p-3 text-sm font-medium text-muted-foreground">Days to +20%</th>
+                  <th className="text-right p-3 text-sm font-medium text-muted-foreground">Days to +25%</th>
                 </tr>
               </thead>
               <tbody>
-                {newestPeaks.map((peak, idx) => (
-                  <tr key={idx} className="border-t border-border">
-                    <td className="p-3 font-mono">{peak.vixPeakDate}</td>
-                    <td className="p-3 text-right font-mono text-red-600 dark:text-red-400">
-                      {formatNumber(peak.vixPeakValue, 2)}
-                    </td>
-                    <td className="p-3 text-right font-mono">
-                      {formatCurrency(peak.assetPriceAtPeak, asset.currency)}
-                    </td>
-                    <td className="p-3 font-mono">
-                      {peak.vixRecoveryDate || <span className="text-yellow-500">No recovery</span>}
-                    </td>
-                    <td className="p-3 text-right font-mono">
-                      {peak.assetPriceAtRecovery !== null
-                        ? formatCurrency(peak.assetPriceAtRecovery, asset.currency)
-                        : '—'}
-                    </td>
-                    <td
-                      className={`p-3 text-right font-mono font-semibold ${peak.percentChange !== null ? (peak.percentChange >= 0 ? 'text-success' : 'text-destructive') : 'text-yellow-500'}`}
-                    >
-                      {peak.percentChange !== null ? formatPercent(peak.percentChange) : 'Excluded'}
-                    </td>
-                    <td className="p-3 text-right font-mono">
-                      {peak.daysToRecovery !== null ? peak.daysToRecovery : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {newestPeaks.map((peak, idx) => {
+                  const ev = responseEventByDate.get(peak.vixPeakDate)
+                  return (
+                    <tr key={idx} className="border-t border-border">
+                      <td className="p-3 font-mono">{peak.vixPeakDate}</td>
+                      <td className="p-3 text-right font-mono text-red-600 dark:text-red-400">
+                        {formatNumber(peak.vixPeakValue, 2)}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {formatCurrency(peak.assetPriceAtPeak, asset.currency)}
+                      </td>
+                      <td className="p-3 font-mono">
+                        {peak.vixRecoveryDate || <span className="text-yellow-500">No recovery</span>}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {peak.assetPriceAtRecovery !== null
+                          ? formatCurrency(peak.assetPriceAtRecovery, asset.currency)
+                          : '—'}
+                      </td>
+                      <td
+                        className={`p-3 text-right font-mono font-semibold ${peak.percentChange !== null ? (peak.percentChange >= 0 ? 'text-success' : 'text-destructive') : 'text-yellow-500'}`}
+                      >
+                        {peak.percentChange !== null ? formatPercent(peak.percentChange) : 'Excluded'}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {peak.daysToRecovery !== null ? peak.daysToRecovery : '—'}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ev?.rateToNextVixPeakPctPerDay === null ||
+                        ev?.rateToNextVixPeakPctPerDay === undefined
+                          ? '—'
+                          : `${ev.rateToNextVixPeakPctPerDay >= 0 ? '+' : ''}${ev.rateToNextVixPeakPctPerDay.toFixed(3)}`}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ev?.daysTo10Pct === null || ev?.daysTo10Pct === undefined ? '—' : ev.daysTo10Pct}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ev?.daysTo15Pct === null || ev?.daysTo15Pct === undefined ? '—' : ev.daysTo15Pct}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ev?.daysTo20Pct === null || ev?.daysTo20Pct === undefined ? '—' : ev.daysTo20Pct}
+                      </td>
+                      <td className="p-3 text-right font-mono">
+                        {ev?.daysTo25Pct === null || ev?.daysTo25Pct === undefined ? '—' : ev.daysTo25Pct}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

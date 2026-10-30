@@ -63,4 +63,5 @@ export type Dataset = {
   dateRange: { from: string; to: string }
   vixMetrics?: VixMetrics
   assets: Asset[]
+  customAssets?: Asset[]
 }
