@@ -321,7 +321,12 @@ export default function Dashboard() {
               />
               <select
                 value={addForm.type}
-                onChange={(e) => setAddForm((f) => ({ ...f, type: e.target.value as any }))}
+                onChange={(e) =>
+                  setAddForm((f) => ({
+                    ...f,
+                    type: e.target.value as 'stock' | 'etf' | 'etc' | 'adr' | 'index',
+                  }))
+                }
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               >
                 <option value="stock">stock</option>
@@ -412,7 +417,7 @@ export default function Dashboard() {
                       prices: '',
                       vix: '',
                     })
-                  } catch (e) {
+                  } catch {
                     alert('Failed to add asset')
                   }
                 }}
