@@ -8,100 +8,9 @@ import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
-import { getAssetVixResponse, VIX_RESPONSE_PEAK_THRESHOLD } from '@/lib/vixResponse'
+import { createCustomAssetFromCsv } from '@/lib/customAssets'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
-
-function createCustomAsset(
-  ticker: string,
-  name: string,
-  isin: string,
-  type: 'stock' | 'etf' | 'etc' | 'adr' | 'index',
-  currency: string,
-  exchange: string,
-  priceHistory: number[],
-  vixHistory: number[],
-): Asset {
-  const dates: string[] = []
-  const baseDate = new Date()
-  for (let i = priceHistory.length - 1; i >= 0; i--) {
-    const d = new Date(baseDate)
-    d.setDate(d.getDate() - i * 7)
-    const day = d.getDay()
-    const diff = day === 5 ? 0 : day < 5 ? 5 - day : 5 - day + 7
-    d.setDate(d.getDate() + diff)
-    dates.push(d.toISOString().split('T')[0])
-  }
-  const priceSeries = {
-    dates,
-    vix: vixHistory.slice(-dates.length),
-    price: priceHistory.slice(-dates.length),
-    frequency: 'weekly' as const,
-  }
-  const response = getAssetVixResponse(
-    {
-      isin,
-      ticker,
-      name,
-      type,
-      currency,
-      exchange,
-      peaks: [],
-      summary: { meanChange: 0, maxChange: 0, meanDays: 0, meanVix: 0 },
-      priceSeries,
-    } as Asset,
-    VIX_RESPONSE_PEAK_THRESHOLD,
-    20,
-    false,
-  )
-  const peaks = response.events.map((ev) => ({
-    vixPeakDate: ev.peakDate,
-    vixPeakValue: ev.peakVix,
-    assetPriceAtPeak: ev.peakPrice,
-    vixRecoveryDate: ev.recoveryDate,
-    assetPriceAtRecovery: ev.recoveryPrice,
-    percentChange: ev.reboundPct,
-    daysToRecovery: ev.daysToVixRecovery,
-  }))
-  const validPeaks = peaks.filter((p) => p.percentChange !== null)
-  const summary =
-    validPeaks.length === 0
-      ? { meanChange: 0, maxChange: 0, meanDays: 0, meanVix: 0 }
-      : {
-          meanChange: Number(
-            (validPeaks.reduce((sum, p) => sum + (p.percentChange || 0), 0) / validPeaks.length).toFixed(2),
-          ),
-          maxChange: Number(Math.max(...validPeaks.map((p) => p.percentChange || 0)).toFixed(2)),
-          meanDays: Number(
-            (validPeaks.reduce((sum, p) => sum + (p.daysToRecovery || 0), 0) / validPeaks.length).toFixed(1),
-          ),
-          meanVix: Number((peaks.reduce((sum, p) => sum + p.vixPeakValue, 0) / peaks.length).toFixed(2)),
-        }
-  const latestPrice = priceSeries.price[priceSeries.price.length - 1]
-  const prevPrice = priceSeries.price[priceSeries.price.length - 2]
-  return {
-    isin: isin || `${ticker.toUpperCase()}-CUSTOM`,
-    ticker: ticker.toUpperCase(),
-    name: name || ticker.toUpperCase(),
-    type,
-    currency,
-    exchange,
-    peaks,
-    summary,
-    latestQuote:
-      typeof latestPrice === 'number'
-        ? {
-            price: latestPrice,
-            date: dates[dates.length - 1],
-            previousPrice: typeof prevPrice === 'number' ? prevPrice : null,
-            previousDate: typeof prevPrice === 'number' ? dates[dates.length - 2] : null,
-            changeAbs: typeof prevPrice === 'number' ? latestPrice - prevPrice : null,
-            changePct: typeof prevPrice === 'number' ? ((latestPrice - prevPrice) / prevPrice) * 100 : null,
-          }
-        : null,
-    priceSeries,
-  } as Asset
-}
 
 function SortHeader({
   label,
@@ -167,13 +76,14 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function Dashboard() {
-  const { data, loading, error, addCustomAsset } = useData()
+  const { data, loading, error, addCustomAsset, removeCustomAsset, customAssets } = useData()
   const navigate = useNavigate()
   usePageTitle()
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('meanChange')
   const [sortAsc, setSortAsc] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   const [addForm, setAddForm] = useState({
     ticker: '',
     name: '',
@@ -181,8 +91,7 @@ export default function Dashboard() {
     type: 'stock' as 'stock' | 'etf' | 'etc' | 'adr' | 'index',
     currency: 'USD',
     exchange: 'NASDAQ',
-    prices: '',
-    vix: '',
+    priceCsv: '',
   })
 
   useEffect(() => {
@@ -291,31 +200,44 @@ export default function Dashboard() {
         <div className="flex justify-center mt-4">
           <button
             type="button"
-            onClick={() => setShowAdd((v) => !v)}
+            onClick={() => {
+              setShowAdd((visible) => !visible)
+              setAddError(null)
+            }}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
           >
             <PlusCircle className="h-4 w-4" />
-            Add custom asset (ticker/ISIN + history)
+            Add or manage local assets
           </button>
         </div>
         {showAdd && (
           <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-border bg-card p-4 text-left space-y-3">
+            <div>
+              <h2 className="font-semibold">Add an asset to this browser</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Enter at least one identifier (ticker, name, or ISIN) and paste dated daily prices. This
+                static site cannot resolve identifiers or download arbitrary market history automatically.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 value={addForm.ticker}
                 onChange={(e) => setAddForm((f) => ({ ...f, ticker: e.target.value }))}
-                placeholder="Ticker (e.g., TSLA)"
+                aria-label="Ticker or display identifier"
+                placeholder="Ticker / display identifier (optional)"
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               />
               <input
                 value={addForm.name}
                 onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Name"
+                aria-label="Asset name"
+                placeholder="Asset name"
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               />
               <input
                 value={addForm.isin}
                 onChange={(e) => setAddForm((f) => ({ ...f, isin: e.target.value }))}
+                aria-label="ISIN"
                 placeholder="ISIN (optional)"
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               />
@@ -349,31 +271,51 @@ export default function Dashboard() {
               />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1">
-                Weekly prices (comma separated), oldest to newest or newest to oldest - will be aligned
+              <label htmlFor="custom-asset-csv" className="mb-1 block text-xs text-muted-foreground">
+                Daily price CSV with Date and Adj Close/Close columns (Yahoo Finance export supported)
+              </label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                aria-label="Import daily price CSV"
+                onChange={async (event) => {
+                  const input = event.currentTarget
+                  const file = input.files?.[0]
+                  if (!file) return
+                  try {
+                    const priceCsv = await file.text()
+                    setAddForm((form) => ({ ...form, priceCsv }))
+                    setAddError(null)
+                  } catch {
+                    setAddError('Could not read that file. Paste the CSV text below instead.')
+                  } finally {
+                    input.value = ''
+                  }
+                }}
+                className="mb-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs"
+              />
+              <textarea
+                id="custom-asset-csv"
+                value={addForm.priceCsv}
+                onChange={(e) => setAddForm((f) => ({ ...f, priceCsv: e.target.value }))}
+                placeholder={'Date,Close\n2025-09-01,100.00\n2025-09-02,102.50'}
+                aria-label="Daily dated closing-price CSV"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono"
+                rows={5}
+              />
+            </div>
+            {addError && (
+              <p className="text-sm text-destructive" role="alert">
+                {addError}
               </p>
-              <textarea
-                value={addForm.prices}
-                onChange={(e) => setAddForm((f) => ({ ...f, prices: e.target.value }))}
-                placeholder="100, 102, 98, ..."
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono"
-                rows={3}
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Weekly VIX (comma separated)</p>
-              <textarea
-                value={addForm.vix}
-                onChange={(e) => setAddForm((f) => ({ ...f, vix: e.target.value }))}
-                placeholder="18, 19, 25, ..."
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono"
-                rows={2}
-              />
-            </div>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowAdd(false)}
+                onClick={() => {
+                  setShowAdd(false)
+                  setAddError(null)
+                }}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm"
               >
                 Cancel
@@ -382,31 +324,15 @@ export default function Dashboard() {
                 type="button"
                 onClick={() => {
                   try {
-                    const parseNums = (s: string) =>
-                      s
-                        .split(/[\s,;]+/)
-                        .map((x) => x.trim())
-                        .filter(Boolean)
-                        .map((x) => Number(x))
-                        .filter((n) => !isNaN(n))
-                    const prices = parseNums(addForm.prices)
-                    const vix = parseNums(addForm.vix)
-                    if (prices.length === 0) {
-                      alert('Please provide at least some prices')
-                      return
-                    }
-                    const asset = createCustomAsset(
-                      addForm.ticker || 'CUSTOM',
-                      addForm.name || addForm.ticker || 'Custom Asset',
-                      addForm.isin,
-                      addForm.type,
-                      addForm.currency || 'USD',
-                      addForm.exchange || 'CUSTOM',
-                      prices,
-                      vix.length ? vix : Array(prices.length).fill(18),
+                    const reference = data.assets.find(
+                      (asset) => !customAssets.some((custom) => custom.isin === asset.isin),
                     )
+                    if (!reference || !data.dailyVix) {
+                      throw new Error('The shared daily VIX/weekly reference data is unavailable.')
+                    }
+                    const asset = createCustomAssetFromCsv(addForm, data.dailyVix, reference)
                     addCustomAsset(asset)
-                    setShowAdd(false)
+                    setAddError(null)
                     setAddForm({
                       ticker: '',
                       name: '',
@@ -414,22 +340,42 @@ export default function Dashboard() {
                       type: 'stock',
                       currency: 'USD',
                       exchange: 'NASDAQ',
-                      prices: '',
-                      vix: '',
+                      priceCsv: '',
                     })
-                  } catch {
-                    alert('Failed to add asset')
+                  } catch (cause) {
+                    setAddError(cause instanceof Error ? cause.message : 'Failed to add asset.')
                   }
                 }}
                 className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm"
               >
-                Add Asset
+                Save asset locally
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Custom assets are stored locally in your browser. They will appear in search/ranking and
-              analysis.
+              Imported daily closes use the same VIX dates and peak/recovery calculations as built-in assets.
+              Entries are saved in this browser&apos;s local storage only, not published or synced to other
+              devices.
             </p>
+            {customAssets.length > 0 && (
+              <div className="space-y-2 border-t border-border pt-3">
+                <h3 className="text-sm font-medium">Saved local assets ({customAssets.length})</h3>
+                {customAssets.map((asset) => (
+                  <div key={asset.isin} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">
+                      <strong>{asset.ticker}</strong> · {asset.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeCustomAsset(asset.isin)}
+                      className="shrink-0 rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                      aria-label={`Remove ${asset.ticker} from local assets`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

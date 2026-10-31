@@ -349,17 +349,17 @@ export default function VixResponse() {
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-        <h2 className="font-semibold">How to read the ranking and magnitude score</h2>
+        <h2 className="font-semibold">How to read the return ranking and movement score</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           The table defaults to descending signed average peak-to-recovery return, as in the supplied
-          comparison. The separate 0–100 magnitude score is the cross-asset percentile of each asset's average
-          absolute move; it measures movement size, not whether the return was positive and not causal
-          sensitivity to VIX. Daily co-movement is measured separately as Pearson correlation between asset
-          close-to-close percentage returns and daily VIX close point changes on common adjacent observed
-          sessions; the regression slope is asset-return percent per VIX point, and small absolute correlation
-          means weaker linear co-movement in this window. Every qualifying local peak in the selected dates
-          contributes once; shared recovery dates are grouped only for cycle visualization, not for event
-          averages. When daily data is unavailable, the fallback is clearly marked and is less precise.
+          comparison. The separate 0–100 absolute-move percentile ranks each asset's average absolute move; it
+          measures movement size, not whether the return was positive and is not a VIX sensitivity score.
+          Daily co-movement is measured separately as Pearson correlation between asset close-to-close
+          percentage returns and daily VIX close point changes on common adjacent observed sessions; the
+          regression slope is asset-return percent per VIX point, and small absolute correlation means weaker
+          linear co-movement in this window. Every qualifying local peak in the selected dates contributes
+          once; shared recovery dates are grouped only for cycle visualization, not for event averages. When
+          daily data is unavailable, the fallback is clearly marked and is less precise.
         </p>
       </section>
 
@@ -406,7 +406,7 @@ export default function VixResponse() {
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Rank</th>
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Asset</th>
                       <SortHeader
-                        label="Magnitude score"
+                        label="Abs-move percentile"
                         column="magnitudeScore"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
@@ -567,7 +567,7 @@ export default function VixResponse() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/70 pt-3 text-xs">
                     <div>
-                      <p className="text-muted-foreground">Magnitude score</p>
+                      <p className="text-muted-foreground">Abs-move percentile</p>
                       <p className="font-mono">{formatNumber(item.magnitudeScore, 1)} / 100</p>
                     </div>
                     <div>

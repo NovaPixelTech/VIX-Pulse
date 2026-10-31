@@ -9,6 +9,7 @@ A client-side dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved a
 - **VIX Response**: Searchable, sortable ranking for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
 - **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart and benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
+- **Local custom assets**: Import dated daily closes from a CSV, add the asset to the same VIX analysis, and keep it in this browser's local storage. Custom assets can be removed from the dashboard.
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
 - **Responsive**: Mobile asset cards, mobile bottom navigation, and horizontally scrollable data tables.
 - **Refresh**: Cache-busting refresh button reloads the latest published snapshot on every page. GitHub Actions fetches and publishes market data after weekday market close; a link on the dashboard can start a new download manually.
@@ -94,6 +95,7 @@ scripts/          real-data pipeline and offline generators
 - Asset Detail charts and tables use the same individual daily events and the same selectable date window. Grouped recovery cycles are used only for chart shading; summary averages use every qualifying individual peak.
 - The default report window reproduces the supplied script's yfinance range (start 2025-09-01, exclusive end 2026-09-15; thus observations through 2026-09-14). Users can change or clear the date bounds. Price series are Yahoo Finance auto-adjusted closes, which may differ from Digrin or other providers.
 - The VIX Response table defaults to descending signed average peak-to-recovery return, matching the supplied comparison. A separate 0–100 magnitude score ranks average absolute price movement; it is not a performance score or causal measure of VIX sensitivity.
+- Custom asset CSV imports align dated closes to the shared VIX calendar and use the same event calculations. Provide a ticker, name, or ISIN plus a CSV with `Date` and `Adj Close`/`Close` columns. The static GitHub Pages app cannot resolve identifiers, download arbitrary histories, or write to a shared database; custom assets persist only in the current browser profile.
 - Daily VIX co-movement is Pearson correlation between asset close-to-close percentage returns and VIX close point changes; a regression slope (% asset return per VIX point) is also shown. Only adjacent common sessions with real asset closes are used. Forward-filled holidays are excluded. These estimates are descriptive, not causal.
 - Current VIX and asset quote cards use the latest quote included in the generated snapshot and display its date. Weekly chart history remains aligned to completed Friday closes.
 - Baselines, moving averages, and time to regain baseline are weekly-close estimates; peak-to-recovery returns use daily closes.

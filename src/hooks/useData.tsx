@@ -16,6 +16,20 @@ interface DataContextType {
 
 const CUSTOM_ASSETS_KEY = 'vix-pulse-custom-assets'
 
+function normalizeIdentifier(value: string | undefined): string {
+  return value?.trim().toUpperCase() ?? ''
+}
+
+function isSameAsset(left: Asset, right: Asset): boolean {
+  const leftIsin = normalizeIdentifier(left.isin)
+  const rightIsin = normalizeIdentifier(right.isin)
+  const leftTicker = normalizeIdentifier(left.ticker)
+  const rightTicker = normalizeIdentifier(right.ticker)
+  return Boolean(
+    (leftIsin && rightIsin && leftIsin === rightIsin) || (leftTicker && leftTicker === rightTicker),
+  )
+}
+
 function loadCustomAssets(): Asset[] {
   try {
     if (typeof window === 'undefined') return []
@@ -89,7 +103,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const addCustomAsset = useCallback((asset: Asset) => {
     setCustomAssets((prev) => {
-      const filtered = prev.filter((a) => a.isin !== asset.isin && a.ticker !== asset.ticker)
+      const filtered = prev.filter((existing) => !isSameAsset(existing, asset))
       const next = [...filtered, asset]
       saveCustomAssets(next)
       return next
@@ -98,7 +112,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const removeCustomAsset = useCallback((isin: string) => {
     setCustomAssets((prev) => {
-      const next = prev.filter((a) => a.isin !== isin)
+      const normalizedIsin = normalizeIdentifier(isin)
+      const next = prev.filter((asset) => normalizeIdentifier(asset.isin) !== normalizedIsin)
       saveCustomAssets(next)
       return next
     })
@@ -110,9 +125,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...data,
           assets: [
             ...customAssets,
-            ...data.assets.filter(
-              (a) => !customAssets.some((c) => c.isin === a.isin || c.ticker === a.ticker),
-            ),
+            ...data.assets.filter((asset) => !customAssets.some((custom) => isSameAsset(custom, asset))),
           ],
         }
       : data
