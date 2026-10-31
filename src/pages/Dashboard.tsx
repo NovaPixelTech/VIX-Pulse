@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3, ExternalLink, Download } from 'lucide-react'
 import { useData } from '@/hooks/useData'
@@ -116,6 +116,7 @@ export default function Dashboard() {
   const [downloadEnd, setDownloadEnd] = useState(() => todayIso())
   const [downloading, setDownloading] = useState(false)
   const [downloadedCsv, setDownloadedCsv] = useState<YahooCsvResult | null>(null)
+  const tickerInputRef = useRef<HTMLInputElement>(null)
   const [addForm, setAddForm] = useState({
     ticker: '',
     name: '',
@@ -142,10 +143,25 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  const handleTickerChange = (ticker: string) => {
+    setAddForm((form) => ({
+      ...form,
+      ticker,
+      ...(downloadedCsv ? { priceCsv: '' } : {}),
+    }))
+    if (downloadedCsv) {
+      setDownloadedCsv(null)
+      setCsvFileInfo(null)
+      setAddError(null)
+      setAddSuccess(null)
+    }
+  }
+
   const handleYahooDownload = async () => {
     if (downloading) return
     if (!addForm.ticker.trim()) {
-      setAddError('Enter a Yahoo Finance symbol first.')
+      setAddError('Enter a Yahoo Finance symbol in Step 1 first.')
+      tickerInputRef.current?.focus()
       return
     }
     setDownloading(true)
@@ -286,13 +302,6 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
-                value={addForm.ticker}
-                onChange={(e) => setAddForm((f) => ({ ...f, ticker: e.target.value }))}
-                aria-label="Yahoo Finance symbol or ticker"
-                placeholder="Yahoo symbol / ticker (e.g. RHM.DE)"
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              />
-              <input
                 value={addForm.name}
                 onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
                 aria-label="Asset name"
@@ -343,10 +352,22 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-sm font-semibold">Step 1 · Download the daily CSV from Yahoo</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Enter the Yahoo symbol above, choose the history range, then download the CSV directly from
-                  the dashboard.
+                  Enter the Yahoo symbol, choose the history range, then download the CSV directly from the
+                  dashboard.
                 </p>
               </div>
+              <label className="block text-xs text-muted-foreground">
+                Yahoo Finance symbol
+                <input
+                  ref={tickerInputRef}
+                  value={addForm.ticker}
+                  onChange={(event) => handleTickerChange(event.target.value)}
+                  aria-label="Yahoo Finance symbol or ticker"
+                  placeholder="e.g. RHM.DE or AAPL"
+                  autoComplete="off"
+                  className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+              </label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <label className="text-xs text-muted-foreground">
                   Start date
@@ -373,7 +394,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => void handleYahooDownload()}
-                  disabled={downloading || !addForm.ticker.trim()}
+                  disabled={downloading}
                   className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Download className="h-4 w-4" aria-hidden="true" />
