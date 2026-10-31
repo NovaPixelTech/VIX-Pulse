@@ -8,7 +8,7 @@ import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
-import { getAssetVixResponse } from '@/lib/vixResponse'
+import { getAssetVixResponse, VIX_RESPONSE_PEAK_THRESHOLD } from '@/lib/vixResponse'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
 
@@ -50,7 +50,7 @@ function createCustomAsset(
       summary: { meanChange: 0, maxChange: 0, meanDays: 0, meanVix: 0 },
       priceSeries,
     } as Asset,
-    25,
+    VIX_RESPONSE_PEAK_THRESHOLD,
     20,
     false,
   )

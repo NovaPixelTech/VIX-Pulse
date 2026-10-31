@@ -129,17 +129,28 @@ def clean_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
     if frame is None or frame.empty:
         return None
     df = frame.copy()
-    if isinstance(df.columns, pd.MultiIndex):
-        # yfinance returns (field, ticker) columns for a single ticker in v1.x
-        if df.columns.nlevels == 2:
-            df.columns = df.columns.get_level_values(0)
-    df = df.loc[:, ~df.columns.duplicated()]
     needed = {"Open", "High", "Low", "Close"}
+    if isinstance(df.columns, pd.MultiIndex):
+        # yfinance has emitted both (field, ticker) and (ticker, field)
+        # layouts across versions/options. Identify the OHLC level by content.
+        field_level = next(
+            (
+                level
+                for level in range(df.columns.nlevels)
+                if needed.issubset(set(df.columns.get_level_values(level)))
+            ),
+            None,
+        )
+        if field_level is None:
+            return None
+        df.columns = df.columns.get_level_values(field_level)
+    df = df.loc[:, ~df.columns.duplicated()]
     if not needed.issubset(set(df.columns)):
         return None
     df.index = pd.to_datetime(df.index)
     if getattr(df.index, "tz", None) is not None:
         df.index = df.index.tz_localize(None)
+    df = df.loc[~df.index.duplicated(keep="last")]
     return df.sort_index()
 
 
@@ -202,17 +213,12 @@ def find_vix_peaks(vix_daily: pd.DataFrame) -> list[dict]:
 def as_price(series: pd.Series, day: pd.Timestamp | None) -> float | None:
     if day is None:
         return None
-    if day in series.index:
-        value = series.loc[day]
-        if pd.notna(value):
-            return float(value)
-    # Align a holiday in one market with the nearest trading session.
-    nearby = series.index[(series.index >= day - pd.Timedelta(days=3)) & (series.index <= day + pd.Timedelta(days=3))]
-    if len(nearby):
-        value = series.loc[nearby].iloc[0]
-        if pd.notna(value):
-            return float(value)
-    return None
+    # Match the report methodology: use the asset's last close on or before
+    # the VIX observation. Never look ahead to a later asset close on holidays.
+    available = series.loc[:day].dropna()
+    if available.empty:
+        return None
+    return float(available.iloc[-1])
 
 
 def calculate_summary(peaks: list[dict]) -> dict:
@@ -281,15 +287,16 @@ def build_asset(
     daily_close = asset_daily["Close"].astype(float) / price_divisor
     peaks: list[dict] = []
     for peak in vix_peaks:
-        price_at_peak = as_price(daily_close, peak["date"])
-        if price_at_peak is None:
+        raw_price_at_peak = as_price(daily_close, peak["date"])
+        if raw_price_at_peak is None:
             continue
+        price_at_peak = round(raw_price_at_peak, 4)
         recovery = peak["recovery"]
         if recovery is None:
             peaks.append(
                 {
                     "vixPeakDate": peak["date"].strftime("%Y-%m-%d"),
-                    "vixPeakValue": round(peak["high"], 2),
+                    "vixPeakValue": round(peak["high"], 4),
                     "assetPriceAtPeak": round(price_at_peak, 4),
                     "vixRecoveryDate": None,
                     "assetPriceAtRecovery": None,
@@ -298,12 +305,12 @@ def build_asset(
                 }
             )
             continue
-        price_at_recovery = as_price(daily_close, recovery)
-        if price_at_recovery is None:
+        raw_price_at_recovery = as_price(daily_close, recovery)
+        if raw_price_at_recovery is None:
             peaks.append(
                 {
                     "vixPeakDate": peak["date"].strftime("%Y-%m-%d"),
-                    "vixPeakValue": round(peak["high"], 2),
+                    "vixPeakValue": round(peak["high"], 4),
                     "assetPriceAtPeak": round(price_at_peak, 4),
                     "vixRecoveryDate": None,
                     "assetPriceAtRecovery": None,
@@ -312,12 +319,13 @@ def build_asset(
                 }
             )
             continue
+        price_at_recovery = round(raw_price_at_recovery, 4)
         percent = ((price_at_recovery - price_at_peak) / price_at_peak) * 100
         days = (recovery - peak["date"]).days
         peaks.append(
             {
                 "vixPeakDate": peak["date"].strftime("%Y-%m-%d"),
-                "vixPeakValue": round(peak["high"], 2),
+                "vixPeakValue": round(peak["high"], 4),
                 "assetPriceAtPeak": round(price_at_peak, 4),
                 "vixRecoveryDate": recovery.strftime("%Y-%m-%d"),
                 "assetPriceAtRecovery": round(price_at_recovery, 4),
@@ -331,6 +339,17 @@ def build_asset(
     price_values: list[float | None] = []
     for value in weekly_close.to_numpy():
         price_values.append(None if pd.isna(value) else round(float(value), 4))
+
+    # Align daily asset closes to the VIX trading calendar. Forward-fill only
+    # across non-trading days for this asset so a VIX event uses the last
+    # available asset close, never a future close.
+    daily_asset_close_on_vix_dates = daily_close.reindex(vix_daily.index)
+    daily_price_observed = [bool(pd.notna(value)) for value in daily_asset_close_on_vix_dates.to_numpy()]
+    daily_asset_close = daily_asset_close_on_vix_dates.ffill()
+    daily_price_values = [
+        None if pd.isna(value) else round(float(value), 4)
+        for value in daily_asset_close.to_numpy()
+    ]
 
     return {
         "isin": isin,
@@ -348,6 +367,8 @@ def build_asset(
             "price": price_values,
             "frequency": "weekly",
         },
+        "dailyPriceSeries": daily_price_values,
+        "dailyPriceObserved": daily_price_observed,
         "placeholder": is_placeholder,
         "_yahooTicker": yf_ticker,
         "_sourceRows": int(len(daily_close)),
@@ -451,6 +472,11 @@ def main() -> None:
         "vixThresholdRecovery": VIX_THRESHOLD_RECOVERY,
         "dateRange": {"from": weekly_dates[0], "to": weekly_dates[-1]},
         "vixMetrics": vix_metrics,
+        "dailyVix": {
+            "dates": [d.strftime("%Y-%m-%d") for d in vix_daily.index],
+            "high": [round(float(value), 4) for value in vix_daily["High"].astype(float).to_numpy()],
+            "close": [round(float(value), 4) for value in vix_daily["Close"].astype(float).to_numpy()],
+        },
         "assets": [{k: v for k, v in asset.items() if not k.startswith("_")} for asset in assets],
     }
 

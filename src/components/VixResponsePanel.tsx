@@ -29,6 +29,7 @@ const SUMMARY_ROWS: Array<{ group: string; rows: SummaryRow[] }> = [
       { label: 'Peak drawdown depth', key: 'drawdownPct', unit: 'magnitudePercent' },
       { label: 'Response ratio (% per VIX point)', key: 'responseRatio', unit: 'ratio' },
       { label: 'Peak-to-recovery rebound', key: 'reboundPct', unit: 'percent' },
+      { label: 'Absolute peak-to-recovery move', key: 'absoluteReboundPct', unit: 'magnitudePercent' },
       { label: 'Baseline-to-recovery return (P/L)', key: 'cycleReturnPct', unit: 'percent' },
       { label: 'Days until VIX recovery', key: 'daysToVixRecovery', unit: 'days' },
       { label: 'Days until asset regains baseline', key: 'daysToBaselineRecovery', unit: 'days' },
@@ -94,44 +95,59 @@ function signedColor(value: number | null): string {
 export default function VixResponsePanel({
   response,
   currency,
+  peakThreshold,
+  recoveryThreshold,
+  dailyVixAvailable,
+  dailyAssetPrices,
+  analysisFrom,
+  analysisTo,
 }: {
   response: AssetVixResponse
   currency: string
+  peakThreshold: number
+  recoveryThreshold: number
+  dailyVixAvailable: boolean
+  dailyAssetPrices: boolean
+  analysisFrom: string
+  analysisTo: string
 }) {
   return (
     <section className="space-y-6" aria-labelledby="vix-response-heading">
       <div className="space-y-2">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 id="vix-response-heading" className="text-2xl font-bold">
-            VIX &gt;25 Response Analysis
+            VIX Response Analysis
           </h2>
           <p className="text-sm text-muted-foreground">
-            {response.eventCount} local peaks · {response.cycleCount} grouped recovery cycles ·{' '}
-            {response.recoveredCycleCount} recovered
+            {response.eventCount} individual local peaks · {response.cycleCount} grouped recovery windows ·{' '}
+            {response.recoveredEventCount} recovered peaks
           </p>
         </div>
         <p className="max-w-5xl text-sm text-muted-foreground">
-          Each cycle contributes its highest VIX peak to the summary so repeated local highs do not overweight
-          one episode. The event table retains every peak above 25. Stress move compares the peak price with
-          the last weekly close before that peak; rebound compares the recovery price with the peak price.
-          Response ratio is the stress-period asset move per VIX point.
+          Period: {analysisFrom || 'start of available history'} to {analysisTo || 'latest available date'}.
+          The figures below summarize every individual local VIX high strictly above {peakThreshold};
+          {dailyVixAvailable ? ' daily highs' : ' weekly closes (fallback estimates)'} are used for peak
+          detection and {dailyVixAvailable ? 'daily' : 'weekly'} closes below {recoveryThreshold} for
+          recovery. They are not calculated from one representative peak per recovery window. Asset prices use{' '}
+          {dailyAssetPrices ? 'daily' : 'weekly fallback'} closes on or before the VIX dates. The stress move
+          still uses the prior weekly baseline.
         </p>
       </div>
 
       {response.eventCount === 0 ? (
         <div className="rounded-xl border border-border bg-card p-6 text-center text-muted-foreground">
-          No VIX peaks above 25 are available for this asset.
+          No qualifying VIX peaks are available for this asset in this period.
         </div>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Positive rebound cycles</p>
+              <p className="text-sm text-muted-foreground">Positive peak-to-recovery changes</p>
               <p className="mt-1 font-mono text-xl font-bold">
                 {formatRate(response.positiveRecoveryRatePct)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {response.positiveRecoveryCount} of {response.recoveredCycleCount} recovered cycles
+                {response.positiveRecoveryCount} of {response.recoveredEventCount} recovered individual peaks
               </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
@@ -139,13 +155,13 @@ export default function VixResponsePanel({
               <p className="mt-1 font-mono text-xl font-bold">
                 {formatRate(response.baselineRecoveryRatePct)}
               </p>
-              <p className="text-xs text-muted-foreground">Among cycles with a peak drawdown</p>
+              <p className="text-xs text-muted-foreground">Among individual peaks with a drawdown</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Representative VIX peaks</p>
+              <p className="text-sm text-muted-foreground">Grouped recovery windows</p>
               <p className="mt-1 font-mono text-xl font-bold">{response.cycleCount}</p>
               <p className="text-xs text-muted-foreground">
-                Highest local peak counted once per recovery window
+                Used for chart shading only; metric averages use all individual peaks
               </p>
             </div>
           </div>
@@ -154,7 +170,8 @@ export default function VixResponsePanel({
             <div className="max-h-[32rem] overflow-auto">
               <table className="w-full min-w-[760px]">
                 <caption className="sr-only">
-                  Minimum, average, and maximum VIX response metrics across grouped recovery cycles
+                  Minimum, average, and maximum VIX response metrics across individual VIX peaks in the
+                  selected period
                 </caption>
                 <thead className="sticky top-0 z-10 bg-card">
                   <tr>
@@ -203,7 +220,7 @@ export default function VixResponsePanel({
 
           <div className="space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <h3 className="text-xl font-bold">All individual VIX peaks above 25</h3>
+              <h3 className="text-xl font-bold">All individual VIX peaks above {peakThreshold}</h3>
               <p className="text-xs text-muted-foreground">Newest first · scroll within the table</p>
             </div>
             <div className="overflow-hidden rounded-xl border border-border bg-card card-glow">
@@ -278,7 +295,8 @@ export default function VixResponsePanel({
                           {event.recoveryDate ? formatDate(event.recoveryDate) : 'Pending'}
                           {event.recoveryVix !== null && (
                             <span className="block text-xs text-muted-foreground">
-                              weekly VIX {formatNumber(event.recoveryVix, 2)}
+                              {dailyVixAvailable ? 'daily' : 'weekly'} VIX close{' '}
+                              {formatNumber(event.recoveryVix, 2)}
                             </span>
                           )}
                         </td>

@@ -1,12 +1,12 @@
 # VIX Pulse
 
-A production-quality, client-side-only dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved around VIX volatility peaks. All time-series data is weekly, ends at the latest fully completed week, and ships as static JSON.
+A client-side dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved around VIX volatility peaks. Daily event-analysis series and weekly long-range series ship as static JSON.
 
 ## Features
 
 - **Dashboard**: Global ranking of all 66 assets, search, sortable metrics, latest available daily asset quotes, weekly closes, and a prominent current/last-week VIX overview.
-- **Asset Detail**: Latest asset quote and daily move plus the weekly dual-axis VIX/price chart, grouped green/red VIX recovery periods, rebound arrows, moving averages, and per-peak response metrics.
-- **VIX Response**: Searchable, sortable sensitivity ranking for VIX peaks above 25, with a normalized 0–100 score, profit/loss metrics, positive-recovery consistency, and best/worst assets.
+- **Asset Detail**: Latest asset quote and daily move plus an aligned daily VIX/price chart when available, grouped green/red VIX recovery periods, rebound arrows, moving averages, and per-peak response metrics.
+- **VIX Response**: Searchable, sortable ranking for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
 - **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart and benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
@@ -56,13 +56,13 @@ python scripts/fetch_data.py
 The pipeline:
 
 1. Downloads six years of daily `^VIX` and asset history with `yfinance`.
-2. Finds VIX peak days from daily Highs above 21, with both neighbouring days lower.
+2. Finds VIX peak days from daily Highs strictly above 21, with both neighbouring trading-day highs lower.
 3. Finds the first recovery day at or after the peak where the VIX close is below 20.
 4. Calculates asset closes, percent change, days to recovery, and per-asset summaries.
 5. Builds aligned Friday week-ending series for assets and VIX.
 6. Captures the latest daily VIX close plus previous-day and previous-week moves.
 7. Captures the latest available daily asset close and previous-session move for all tracked assets.
-8. Normalises London pence quotes to pounds and writes `public/data/vix-pulse.json`.
+8. Aligns daily adjusted asset closes to the VIX trading calendar, normalises London pence quotes to pounds, and writes `public/data/vix-pulse.json`.
 
 `python scripts/generate_data.py` is an offline/placeholder utility and is not used for the published dataset.
 
@@ -89,10 +89,14 @@ scripts/          real-data pipeline and offline generators
 ## Data Notes
 
 - VIX peak detection uses daily intraday Highs; recoveries and asset values use closes.
-- Daily peak dates are mapped to the nearest week ending for chart annotations.
-- The VIX Response page uses the last weekly close before each peak as its asset baseline. Local peaks sharing a recovery date are grouped for cycle summaries and chart shading; each cycle uses its highest VIX peak, while Asset Detail lists every peak above 25.
+- Asset Detail plots daily event markers on their exact dates; Compare and long-range charts retain weekly data.
+- The supplied report's local-high rule is used: daily VIX High strictly above 21, higher than both adjacent trading-day Highs; recovery is the first daily VIX Close below 20 on or after the peak date. For an asset holiday, its latest close on or before the VIX observation is used (never a future price).
+- Asset Detail charts and tables use the same individual daily events and the same selectable date window. Grouped recovery cycles are used only for chart shading; summary averages use every qualifying individual peak.
+- The default report window reproduces the supplied script's yfinance range (start 2025-09-01, exclusive end 2026-09-15; thus observations through 2026-09-14). Users can change or clear the date bounds. Price series are Yahoo Finance auto-adjusted closes, which may differ from Digrin or other providers.
+- The VIX Response table defaults to descending signed average peak-to-recovery return, matching the supplied comparison. A separate 0–100 magnitude score ranks average absolute price movement; it is not a performance score or causal measure of VIX sensitivity.
+- Daily VIX co-movement is Pearson correlation between asset close-to-close percentage returns and VIX close point changes; a regression slope (% asset return per VIX point) is also shown. Only adjacent common sessions with real asset closes are used. Forward-filled holidays are excluded. These estimates are descriptive, not causal.
 - Current VIX and asset quote cards use the latest quote included in the generated snapshot and display its date. Weekly chart history remains aligned to completed Friday closes.
-- The response score averages cross-asset percentile ranks for drawdown depth, rebound, positive-recovery rate, and time to regain the baseline. The score is separate from the baseline-to-recovery profit/loss return.
+- Baselines, moving averages, and time to regain baseline are weekly-close estimates; peak-to-recovery returns use daily closes.
 - 4-week and 13-week moving averages, and time to regain the baseline, are calculated from weekly closes; those timings are weekly estimates rather than daily asset observations.
 - Values remain in each security's quote currency. London-listed pence quotes are divided by 100 and labelled GBP.
 - Current VIX is the latest available daily quote; weekly metrics use the latest completed Friday.

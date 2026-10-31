@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { Asset, Dataset, Peak } from '@/types'
+import type { Asset, DailyVixSeries, Dataset, Peak } from '@/types'
 import dataset from '../../public/data/vix-pulse.json'
 import {
+  calculateVixCoMovement,
   getAssetVixResponse,
+  computePeaksForAsset,
   getMovingAverageSeries,
   rankVixResponses,
   VIX_RESPONSE_PEAK_THRESHOLD,
@@ -86,7 +88,7 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
 }
 
 describe('VIX response analytics', () => {
-  it('measures each >25 peak against the prior weekly close and groups shared recoveries', () => {
+  it('measures each >21 peak against the prior weekly close and groups shared recoveries', () => {
     const response = getAssetVixResponse(makeAsset())
 
     expect(response.eventCount).toBe(3)
@@ -119,6 +121,151 @@ describe('VIX response analytics', () => {
     expect(representative.representative.daysToBaselineRecovery).toBe(6)
     expect(representative.representative.peakMovingAverages.fourWeek).toBeNull()
     expect(representative.representative.recoveryMovingAverages.fourWeek).toBe(91.25)
+  })
+
+  it('uses daily VIX highs, daily closes, and same-date asset closes for report peaks', () => {
+    const dailyVix: DailyVixSeries = {
+      dates: ['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'],
+      high: [18, 26, 30, 23, 19],
+      close: [17, 24, 28, 21, 19],
+    }
+    const asset = makeAsset({
+      dailyPriceSeries: [100, 98, 90, 95, 100],
+    })
+    const events = computePeaksForAsset(asset, 21, 20, dailyVix)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      vixPeakDate: '2024-01-10',
+      vixPeakValue: 30,
+      assetPriceAtPeak: 90,
+      vixRecoveryDate: '2024-01-12',
+      assetPriceAtRecovery: 100,
+      percentChange: 11.11,
+      daysToRecovery: 2,
+    })
+  })
+
+  it('uses the actual VIX recovery close and does not use weekly data after normalization', () => {
+    const dates = [
+      '2024-01-15',
+      '2024-01-16',
+      '2024-01-17',
+      '2024-01-18',
+      '2024-01-19',
+      '2024-01-22',
+      '2024-01-23',
+      '2024-01-24',
+      '2024-01-25',
+      '2024-01-26',
+    ]
+    const dailyVix: DailyVixSeries = {
+      dates,
+      high: [18, 24, 30, 25, 24, 23, 22, 21, 20, 19],
+      close: [17, 22, 28, 24, 22, 21, 20.5, 19, 19, 18],
+    }
+    const asset = makeAsset({
+      priceSeries: {
+        dates: weeklyDates,
+        price: [100, 95, 80, 110, ...weeklyPrices.slice(4)],
+        vix: [17, 20, 33, 25, ...Array(weeklyDates.length - 4).fill(18)],
+        frequency: 'weekly',
+      },
+      dailyPriceSeries: [100, 98, 90, 93, 96, 97, 99, 101, 102, 103],
+    })
+
+    const response = getAssetVixResponse(asset, 21, 20, false, dailyVix)
+    const event = response.events[0]
+
+    expect(response.events).toHaveLength(1)
+    expect(event.recoveryDate).toBe('2024-01-24')
+    expect(event.recoveryVix).toBe(19)
+    expect(event.recoveryWeek).toBe('2024-01-26')
+    expect(event.recoveryMovingAverages.fourWeek).toBeNull()
+    expect(event.daysToBaselineRecovery).toBeNull()
+  })
+
+  it('uses the last weekly asset close on or before a daily VIX event when daily prices are unavailable', () => {
+    const dailyVix: DailyVixSeries = {
+      dates: ['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'],
+      high: [18, 26, 30, 23, 19],
+      close: [17, 24, 28, 21, 19],
+    }
+    const events = computePeaksForAsset(makeAsset(), 21, 20, dailyVix)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      vixPeakDate: '2024-01-10',
+      assetPriceAtPeak: 100,
+      vixRecoveryDate: '2024-01-12',
+      assetPriceAtRecovery: 95,
+      percentChange: -5,
+    })
+  })
+
+  it('rebuilds legacy/custom peak rows from daily VIX when the asset has only weekly prices', () => {
+    const dailyVix: DailyVixSeries = {
+      dates: ['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'],
+      high: [18, 26, 30, 23, 19],
+      close: [17, 24, 28, 21, 19],
+    }
+    const response = getAssetVixResponse(makeAsset(), 21, 20, true, dailyVix)
+
+    expect(response.eventCount).toBe(1)
+    expect(response.events[0].peakDate).toBe('2024-01-10')
+    expect(response.events[0].peakPrice).toBe(100)
+  })
+
+  it('applies the strict VIX threshold before display rounding', () => {
+    const dailyVix: DailyVixSeries = {
+      dates: ['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'],
+      high: [18, 21.0001, 20, 21, 19],
+      close: [18, 20.5, 19, 20.5, 19],
+    }
+    const events = computePeaksForAsset(
+      makeAsset({ dailyPriceSeries: [100, 100, 100, 100, 100] }),
+      21,
+      20,
+      dailyVix,
+    )
+
+    expect(events).toHaveLength(1)
+    expect(events[0].vixPeakDate).toBe('2024-01-09')
+    expect(events[0].vixPeakValue).toBe(21.0001)
+  })
+
+  it('calculates VIX correlation and return-per-point on common observed sessions only', () => {
+    const dailyVix: DailyVixSeries = {
+      dates: ['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'],
+      high: [18, 19, 20, 19, 18],
+      close: [18, 19, 20, 19, 18],
+    }
+    const asset = makeAsset({
+      dailyPriceSeries: [100, 110, 121, 108.9, 98.01],
+      dailyPriceObserved: [true, true, true, true, true],
+    })
+    const metrics = calculateVixCoMovement(asset, dailyVix, {
+      from: '2024-01-09',
+      to: '2024-01-11',
+    })
+
+    expect(metrics.observations).toBe(3)
+    expect(metrics.correlation).toBeCloseTo(1)
+    expect(metrics.returnPctPerVixPoint).toBeCloseTo(10)
+  })
+
+  it('averages all individual peaks even when peaks share a recovery cycle', () => {
+    const response = getAssetVixResponse(makeAsset())
+    const individualReturns = response.events
+      .map((event) => event.reboundPct)
+      .filter((value): value is number => value !== null)
+
+    expect(response.stats.reboundPct.average).toBeCloseTo(
+      individualReturns.reduce((sum, value) => sum + value, 0) / individualReturns.length,
+    )
+    expect(response.stats.absoluteReboundPct.average).toBeCloseTo(
+      individualReturns.reduce((sum, value) => sum + Math.abs(value), 0) / individualReturns.length,
+    )
   })
 
   it('marks a recovered cycle red when the asset did not rise during VIX normalization', () => {
@@ -157,7 +304,7 @@ describe('VIX response analytics', () => {
     expect(averages[4]).toBe(91.25)
   })
 
-  it('ranks sensitivity using normalized drawdown, rebound, consistency, and recovery speed', () => {
+  it('ranks by signed average peak-to-recovery return and keeps magnitude score separate', () => {
     const asset = makeAsset()
     const sensitive = makeAsset({
       isin: 'TEST00000002',
@@ -176,21 +323,59 @@ describe('VIX response analytics', () => {
     const ranked = rankVixResponses([asset, sensitive])
 
     expect(ranked[0].asset.ticker).toBe('SENSITIVE')
-    expect(ranked[0].sensitivityScore).toBeGreaterThan(ranked[1].sensitivityScore)
-    expect(ranked[0].sensitivityScore).toBeGreaterThanOrEqual(0)
-    expect(ranked[0].sensitivityScore).toBeLessThanOrEqual(100)
+    expect(ranked[0].stats.reboundPct.average).toBeGreaterThanOrEqual(ranked[1].stats.reboundPct.average!)
+    expect(ranked[0].magnitudeScore).toBeGreaterThan(ranked[1].magnitudeScore)
+    expect(ranked[0].magnitudeScore).toBeGreaterThanOrEqual(0)
+    expect(ranked[0].magnitudeScore).toBeLessThanOrEqual(100)
   })
 
   it('builds finite VIX response rankings for the checked-in asset dataset', () => {
-    const ranked = rankVixResponses((dataset as unknown as Dataset).assets)
+    const snapshot = dataset as unknown as Dataset
+    const ranked = rankVixResponses(snapshot.assets, VIX_RESPONSE_PEAK_THRESHOLD, 20, snapshot.dailyVix, {
+      from: '2025-09-01',
+      to: '2026-09-14',
+    })
     const distinctRecoveryWindows = new Set(
       ranked.flatMap((item) => item.cycles.map((cycle) => cycle.recoveryDate).filter(Boolean)),
     )
 
     expect(ranked).toHaveLength(66)
-    expect(distinctRecoveryWindows.size).toBe(22)
-    expect(ranked.every((item) => Number.isFinite(item.sensitivityScore))).toBe(true)
-    expect(ranked.every((item) => item.sensitivityScore >= 0 && item.sensitivityScore <= 100)).toBe(true)
+    expect(distinctRecoveryWindows.size).toBeGreaterThan(8)
+    expect(ranked.every((item) => Number.isFinite(item.magnitudeScore))).toBe(true)
+    expect(ranked.every((item) => item.magnitudeScore >= 0 && item.magnitudeScore <= 100)).toBe(true)
+    expect(
+      ranked.every(
+        (item, index) =>
+          index === 0 ||
+          (ranked[index - 1].stats.reboundPct.average ?? Number.NEGATIVE_INFINITY) >=
+            (item.stats.reboundPct.average ?? Number.NEGATIVE_INFINITY),
+      ),
+    ).toBe(true)
     expect(ranked.some((item) => item.stats.daysToBaselineRecovery.average !== null)).toBe(true)
+    expect(snapshot.dailyVix?.dates.length).toBeGreaterThan(1000)
+    expect(
+      snapshot.assets.every((asset) => asset.dailyPriceSeries?.length === snapshot.dailyVix?.dates.length),
+    ).toBe(true)
+    expect(
+      snapshot.assets.every((asset) => asset.dailyPriceObserved?.length === snapshot.dailyVix?.dates.length),
+    ).toBe(true)
+    expect(ranked.every((item) => item.vixCoMovement.observations > 50)).toBe(true)
+    const lowestCorrelationAssets = [...ranked].sort(
+      (left, right) =>
+        Math.abs(left.vixCoMovement.correlation ?? Number.POSITIVE_INFINITY) -
+        Math.abs(right.vixCoMovement.correlation ?? Number.POSITIVE_INFINITY),
+    )
+    const hagCorrelationRank = lowestCorrelationAssets.findIndex((item) => item.asset.ticker === 'HAG') + 1
+    expect(hagCorrelationRank).toBeLessThanOrEqual(10)
+  })
+
+  it('keeps generated HAG and RHM peak rows identical to the browser daily calculation', () => {
+    const snapshot = dataset as unknown as Dataset
+    expect(snapshot.dailyVix).toBeDefined()
+    for (const isin of ['DE000HAG0005', 'DE0007030009']) {
+      const asset = snapshot.assets.find((candidate) => candidate.isin === isin)!
+      const computed = computePeaksForAsset(asset, 21, 20, snapshot.dailyVix)
+      expect(computed).toEqual(asset.peaks)
+    }
   })
 })

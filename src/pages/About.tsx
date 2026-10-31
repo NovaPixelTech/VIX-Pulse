@@ -88,28 +88,32 @@ export default function About() {
           </li>
         </ol>
         <p className="text-sm text-muted-foreground mt-4">
-          Peak detection and recovery percentages use daily data: VIX intraday Highs identify peaks, while
-          recovery and asset values use closing prices. The charts use Friday week-ending closes, so a daily
-          peak date is displayed at its nearest week ending on the chart while the table keeps the exact daily
-          date.
+          VIX peaks are daily local highs strictly above 21 (higher than the previous and next trading-day
+          highs). Recovery is the first daily VIX close below 20. Peak and recovery asset prices use the
+          latest available adjusted close on or before each VIX date. If an asset market is closed, its prior
+          close is used; a later close is never substituted.
         </p>
         <p className="text-sm text-muted-foreground">
-          The original peak-recovery summary excludes peaks without a VIX close below 20. The VIX Response
-          page keeps an unresolved stress cycle as pending, displays available peak measurements, and does not
-          shade it until recovery data is available.
+          Asset Detail charts and tables use the same daily event records and selected date window. Recovery
+          cycles sharing a recovery date may be grouped visually, but every individual peak contributes to the
+          reported min/average/max statistics. Unrecovered events remain pending and are excluded from
+          peak-to-recovery return averages.
         </p>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-6 card-glow space-y-4">
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-bold">VIX &gt;25 sensitivity response</h2>
+          <h2 className="text-xl font-bold">VIX local-peak response analysis</h2>
         </div>
         <p className="text-sm">
-          The Response page evaluates VIX local peaks above 25. The baseline is the last available weekly
-          asset close before each peak. Peaks sharing a VIX recovery date are grouped as one cycle for ranking
-          and chart shading; the highest VIX peak represents that cycle. Asset Detail still lists every
-          individual peak above 25.
+          The response report evaluates every daily VIX local high above 21, with recovery below 20. Its
+          initial reporting period matches the supplied yfinance range (Sep 1, 2025 through Sep 14, 2026;
+          yfinance&apos;s end date is exclusive) and can be edited. Baseline comparisons and moving-average
+          measures use weekly closes; peak-to-recovery returns use daily closes. The table defaults to
+          descending signed average peak-to-recovery return, matching the supplied comparison. The magnitude
+          score ranks average absolute moves separately. Grouping is only for chart shading, not event
+          averages.
         </p>
         <ul className="list-disc space-y-2 pl-5 text-sm">
           <li>
@@ -131,18 +135,25 @@ export default function About() {
           </li>
         </ul>
         <p className="text-sm text-muted-foreground">
-          The 0–100 sensitivity score is the equal-weight average of cross-asset percentile ranks for average
-          peak drawdown depth, average rebound, positive-rebound consistency, and baseline recovery speed.
-          Faster baseline recovery ranks higher; speed is estimated from weekly closes, and missing component
-          data scores zero. Green chart bands mark positive rebounds while VIX returns below 20; red bands
-          mark a zero or negative rebound. Unrecovered VIX cycles are left unshaded until recovery data is
-          available.
+          The 0–100 magnitude score is the cross-asset percentile of an asset&apos;s average absolute
+          peak-to-recovery price move. A higher score means a larger observed move, not better performance or
+          causal sensitivity to VIX. The signed average return and baseline-to-recovery P/L are separately
+          reported. Green chart bands mark positive representative-cycle rebounds while VIX returns below 20;
+          red bands mark zero or negative representative-cycle rebounds.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Daily co-movement is reported separately as Pearson correlation between asset close-to-close
+          percentage returns and daily VIX close point changes; its regression slope is asset return percent
+          per VIX point. Only adjacent dates with real closes for both asset sessions are used, so
+          forward-filled asset holidays are not counted as zero-return observations. A low absolute
+          correlation means weaker historical linear co-movement in the selected period; it does not prove
+          causation or future defensiveness.
         </p>
         <p className="text-sm text-muted-foreground">
           The charts include 4-week and 13-week simple moving averages. Their values and the asset&apos;s
           percentage distance from each average are summarized at peak and recovery. Minimum, average, and
-          maximum values are calculated from one representative peak per grouped cycle; the detail event table
-          preserves every VIX &gt;25 local peak.
+          maximum values are calculated across every qualifying peak. Historical prices are Yahoo Finance
+          auto-adjusted closes and may differ from Digrin or other sources.
         </p>
       </section>
 
@@ -152,9 +163,9 @@ export default function About() {
           <h2 className="text-xl font-bold">Weekly data and VIX regimes</h2>
         </div>
         <p className="text-sm">
-          All time-series charts use weekly closes (Friday week ending). Asset and VIX series share the same
-          week-ending date axis, and every series ends at the latest fully completed week. The main dashboard
-          also shows the latest daily VIX quote with its move versus the previous trading day.
+          Asset Detail uses aligned daily closes when the daily snapshot is available; Compare and long-range
+          history use weekly Friday closes. The dashboard separately shows the latest available daily VIX and
+          asset quotes with their observation dates.
         </p>
         <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-3">

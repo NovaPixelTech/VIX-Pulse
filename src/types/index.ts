@@ -38,7 +38,22 @@ export type Asset = {
     price: (number | null)[]
     frequency?: 'weekly'
   }
+  /** Daily closes aligned to Dataset.dailyVix.dates for exact event analysis. */
+  dailyPriceSeries?: Array<number | null>
+  /** Whether a real asset close exists on each aligned VIX trading date. */
+  dailyPriceObserved?: boolean[]
   placeholder?: boolean
+}
+
+export type DailyVixSeries = {
+  dates: string[]
+  high: Array<number | null>
+  close: Array<number | null>
+}
+
+export type AnalysisDateRange = {
+  from?: string
+  to?: string
 }
 
 export type VixMetrics = {
@@ -62,6 +77,7 @@ export type Dataset = {
   vixThresholdRecovery: number
   dateRange: { from: string; to: string }
   vixMetrics?: VixMetrics
+  dailyVix?: DailyVixSeries
   assets: Asset[]
   customAssets?: Asset[]
 }

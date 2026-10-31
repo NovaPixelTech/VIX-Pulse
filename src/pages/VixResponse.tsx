@@ -5,10 +5,18 @@ import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import { formatDate, formatNumber, formatPercent } from '@/lib/utils'
-import { rankVixResponses, type RankedVixResponse } from '@/lib/vixResponse'
+import {
+  rankVixResponses,
+  VIX_RESPONSE_PEAK_THRESHOLD,
+  VIX_RESPONSE_RECOVERY_THRESHOLD,
+  type RankedVixResponse,
+} from '@/lib/vixResponse'
 
 type SortKey =
-  | 'sensitivityScore'
+  | 'magnitudeScore'
+  | 'absoluteMove'
+  | 'vixCorrelation'
+  | 'vixSlope'
   | 'drawdown'
   | 'rebound'
   | 'recoveryRate'
@@ -51,8 +59,14 @@ function SortHeader({
 
 function metricValue(item: RankedVixResponse, key: SortKey): number | null {
   switch (key) {
-    case 'sensitivityScore':
-      return item.sensitivityScore
+    case 'magnitudeScore':
+      return item.magnitudeScore
+    case 'absoluteMove':
+      return item.stats.absoluteReboundPct.average
+    case 'vixCorrelation':
+      return item.vixCoMovement.correlation === null ? null : Math.abs(item.vixCoMovement.correlation)
+    case 'vixSlope':
+      return item.vixCoMovement.returnPctPerVixPoint
     case 'drawdown':
       return item.stats.drawdownPct.average
     case 'rebound':
@@ -90,14 +104,34 @@ function formatMagnitudePercent(value: number | null): string {
   return value === null ? '—' : `${formatNumber(value)}%`
 }
 
+function formatCorrelation(value: number | null): string {
+  return value === null ? '—' : `${value >= 0 ? '+' : ''}${formatNumber(value, 3)}`
+}
+
+function formatVixSlope(value: number | null): string {
+  return value === null ? '—' : `${value >= 0 ? '+' : ''}${formatNumber(value, 3)}%/pt`
+}
+
 export default function VixResponse() {
   const { data, loading, error } = useData()
   usePageTitle('VIX Response Ranking')
   const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('sensitivityScore')
+  const [analysisFrom, setAnalysisFrom] = useState('2025-09-01')
+  const [analysisTo, setAnalysisTo] = useState('2026-09-14')
+  const [sortKey, setSortKey] = useState<SortKey>('rebound')
   const [sortAsc, setSortAsc] = useState(false)
 
-  const ranked = useMemo(() => rankVixResponses(data?.assets ?? []), [data])
+  const ranked = useMemo(
+    () =>
+      rankVixResponses(
+        data?.assets ?? [],
+        VIX_RESPONSE_PEAK_THRESHOLD,
+        VIX_RESPONSE_RECOVERY_THRESHOLD,
+        data?.dailyVix,
+        { from: analysisFrom || undefined, to: analysisTo || undefined },
+      ),
+    [data, analysisFrom, analysisTo],
+  )
   const query = search.trim().toLowerCase()
   const searched = query
     ? ranked.filter(({ asset }) =>
@@ -110,22 +144,39 @@ export default function VixResponse() {
     .map((item) => item.asset.isin)
 
   const totalCycleObservations = ranked.flatMap((item) =>
-    item.cycles.filter((cycle) => cycle.representative.cycleReturnPct !== null),
+    item.events.filter((event) => event.cycleReturnPct !== null),
   )
   const totalPositiveRecoveries = ranked.reduce((sum, item) => sum + item.positiveRecoveryCount, 0)
-  const totalRecoveredCycles = ranked.reduce((sum, item) => sum + item.recoveredCycleCount, 0)
+  const totalRecoveredEvents = ranked.reduce((sum, item) => sum + item.recoveredEventCount, 0)
+  const dailyAssetPriceCount = ranked.filter(
+    ({ asset }) => asset.dailyPriceSeries?.length === data?.dailyVix?.dates.length,
+  ).length
+  const dailyCoMovementCount = ranked.filter((item) => item.vixCoMovement.correlation !== null).length
   const averageCycleReturn =
     totalCycleObservations.length > 0
-      ? totalCycleObservations.reduce((sum, cycle) => sum + cycle.representative.cycleReturnPct!, 0) /
+      ? totalCycleObservations.reduce((sum, event) => sum + event.cycleReturnPct!, 0) /
         totalCycleObservations.length
       : null
   const positiveRecoveryRate =
-    totalRecoveredCycles > 0 ? (totalPositiveRecoveries / totalRecoveredCycles) * 100 : null
+    totalRecoveredEvents > 0 ? (totalPositiveRecoveries / totalRecoveredEvents) * 100 : null
   const distinctCycles = new Set(
     ranked.flatMap((item) => item.cycles.map((cycle) => cycle.recoveryDate ?? cycle.representative.peakDate)),
   ).size
-  const best = ranked[0]
-  const worst = ranked[ranked.length - 1]
+  const mostMoved = [...ranked]
+    .filter((item) => item.stats.absoluteReboundPct.average !== null)
+    .sort(
+      (left, right) => right.stats.absoluteReboundPct.average! - left.stats.absoluteReboundPct.average!,
+    )[0]
+  const leastMoved = [...ranked]
+    .filter((item) => item.stats.absoluteReboundPct.average !== null)
+    .sort(
+      (left, right) => left.stats.absoluteReboundPct.average! - right.stats.absoluteReboundPct.average!,
+    )[0]
+  const leastCorrelated = [...ranked]
+    .filter((item) => item.vixCoMovement.correlation !== null)
+    .sort(
+      (left, right) => Math.abs(left.vixCoMovement.correlation!) - Math.abs(right.vixCoMovement.correlation!),
+    )[0]
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -166,111 +217,156 @@ export default function VixResponse() {
           </div>
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-primary">VIX response</p>
-            <h1 className="text-3xl font-bold sm:text-4xl">Sensitivity ranking</h1>
+            <h1 className="text-3xl font-bold sm:text-4xl">VIX peak-to-recovery response</h1>
           </div>
         </div>
         <p className="max-w-4xl text-muted-foreground">
-          Compare how assets move during VIX spikes above 25 and recoveries back below 20. The default order
-          rewards a larger pre-peak drawdown followed by a stronger, more consistent rebound; average
-          baseline-to-recovery return is shown separately as profit/loss.
+          Compare asset price changes after every daily VIX local high strictly above{' '}
+          {VIX_RESPONSE_PEAK_THRESHOLD}, through the first daily VIX close below{' '}
+          {VIX_RESPONSE_RECOVERY_THRESHOLD}. The default table order is descending signed average
+          peak-to-recovery return, matching the supplied comparison. Average absolute price movement is shown
+          separately and is not a performance ranking.
         </p>
         <p className="text-sm text-muted-foreground">
-          Weekly prices through{' '}
-          <span className="font-medium text-foreground">{formatDate(data.dateRange.to)}</span>
-          {' · '}
-          {distinctCycles} grouped VIX recovery windows · 4-week and 13-week moving averages
+          Report window {formatDate(analysisFrom)} – {formatDate(analysisTo)} · {distinctCycles} recovery
+          windows ·{' '}
+          {data.dailyVix
+            ? `daily VIX highs; ${dailyAssetPriceCount}/${ranked.length} daily closes; ${dailyCoMovementCount}/${ranked.length} correlation samples`
+            : 'weekly fallback data'}
         </p>
       </header>
 
+      <section className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Analysis start date</span>
+          <input
+            type="date"
+            value={analysisFrom}
+            onChange={(event) => setAnalysisFrom(event.target.value)}
+            className="block w-full rounded-lg border border-border bg-background px-3 py-2"
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Analysis end date</span>
+          <input
+            type="date"
+            value={analysisTo}
+            onChange={(event) => setAnalysisTo(event.target.value)}
+            className="block w-full rounded-lg border border-border bg-background px-3 py-2"
+          />
+        </label>
+      </section>
+
       <section
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
         aria-label="VIX response overview"
       >
         <div className="rounded-xl border border-border bg-card p-5 card-glow">
           <div className="mb-2 flex items-center gap-2 text-muted-foreground">
             <TrendingUp className="h-4 w-4 text-success" aria-hidden="true" />
-            <span className="text-sm">Highest sensitivity score</span>
+            <span className="text-sm">Highest average absolute move</span>
           </div>
-          {best ? (
+          {mostMoved ? (
             <Link
-              to={`/asset/${best.asset.isin}`}
+              to={`/asset/${mostMoved.asset.isin}`}
               state={{ assetOrder: navigationOrder }}
               className="block w-fit rounded font-bold hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              {best.asset.ticker}
+              {mostMoved.asset.ticker}
             </Link>
           ) : (
             <p className="truncate text-xl font-bold">—</p>
           )}
           <p className="font-mono text-2xl font-bold text-success">
-            {best ? formatNumber(best.sensitivityScore, 1) : '—'}
-            <span className="ml-1 text-sm font-medium text-muted-foreground">/ 100</span>
+            {formatPercent(mostMoved?.stats.absoluteReboundPct.average)}
           </p>
-          <p className={`mt-1 text-xs ${returnClass(best?.stats.cycleReturnPct.average ?? null)}`}>
-            Average cycle P/L {formatPercent(best?.stats.cycleReturnPct.average)}
+          <p className={`mt-1 text-xs ${returnClass(mostMoved?.stats.reboundPct.average ?? null)}`}>
+            Signed mean return {formatPercent(mostMoved?.stats.reboundPct.average)}
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5 card-glow">
           <div className="mb-2 flex items-center gap-2 text-muted-foreground">
             <TrendingDown className="h-4 w-4 text-destructive" aria-hidden="true" />
-            <span className="text-sm">Lowest sensitivity score</span>
+            <span className="text-sm">Lowest average absolute move</span>
           </div>
-          {worst ? (
+          {leastMoved ? (
             <Link
-              to={`/asset/${worst.asset.isin}`}
+              to={`/asset/${leastMoved.asset.isin}`}
               state={{ assetOrder: navigationOrder }}
               className="block w-fit rounded font-bold hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              {worst.asset.ticker}
+              {leastMoved.asset.ticker}
             </Link>
           ) : (
             <p className="truncate text-xl font-bold">—</p>
           )}
           <p className="font-mono text-2xl font-bold text-destructive">
-            {worst ? formatNumber(worst.sensitivityScore, 1) : '—'}
-            <span className="ml-1 text-sm font-medium text-muted-foreground">/ 100</span>
+            {formatPercent(leastMoved?.stats.absoluteReboundPct.average)}
           </p>
-          <p className={`mt-1 text-xs ${returnClass(worst?.stats.cycleReturnPct.average ?? null)}`}>
-            Average cycle P/L {formatPercent(worst?.stats.cycleReturnPct.average)}
+          <p className={`mt-1 text-xs ${returnClass(leastMoved?.stats.reboundPct.average ?? null)}`}>
+            Signed mean return {formatPercent(leastMoved?.stats.reboundPct.average)}
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5 card-glow">
-          <p className="mb-2 text-sm text-muted-foreground">Positive asset rebounds</p>
+          <p className="mb-2 text-sm text-muted-foreground">Positive peak-to-recovery returns</p>
           <p className={`font-mono text-2xl font-bold ${returnClass(positiveRecoveryRate)}`}>
             {formatRate(positiveRecoveryRate, 1)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {totalPositiveRecoveries} of {totalRecoveredCycles} asset-cycle observations
+            {totalPositiveRecoveries} of {totalRecoveredEvents} recovered asset-peak observations
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-5 card-glow">
-          <p className="mb-2 text-sm text-muted-foreground">Average cycle profit/loss</p>
+          <p className="mb-2 text-sm text-muted-foreground">Average baseline-to-recovery P/L</p>
           <p className={`font-mono text-2xl font-bold ${returnClass(averageCycleReturn)}`}>
             {formatPercent(averageCycleReturn, 1)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Baseline close to asset price at VIX normalization
+            Equal-weight average across individual recovered peaks
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5 card-glow">
+          <p className="mb-2 text-sm text-muted-foreground">Lowest |daily correlation with VIX|</p>
+          {leastCorrelated ? (
+            <Link
+              to={`/asset/${leastCorrelated.asset.isin}`}
+              state={{ assetOrder: navigationOrder }}
+              className="block w-fit rounded font-bold hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {leastCorrelated.asset.ticker}
+            </Link>
+          ) : (
+            <p className="truncate text-xl font-bold">—</p>
+          )}
+          <p className="font-mono text-2xl font-bold text-primary">
+            {formatCorrelation(leastCorrelated?.vixCoMovement.correlation ?? null)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Pearson r · {leastCorrelated?.vixCoMovement.observations ?? 0} sessions · slope{' '}
+            {formatVixSlope(leastCorrelated?.vixCoMovement.returnPctPerVixPoint ?? null)}
           </p>
         </div>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-        <h2 className="font-semibold">How the score works</h2>
+        <h2 className="font-semibold">How to read the ranking and magnitude score</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Each asset is scored from 0–100 using the equal-weight average of its percentile ranks for average
-          peak drawdown depth, average rebound, share of positive rebounds, and average time to regain its
-          pre-peak baseline. Faster baseline recovery scores higher. The time measure uses weekly closes and
-          only cycles that regain their baseline. Missing component data scores zero to avoid rewarding
-          incomplete histories. Raw values and P/L remain visible so the score is not a substitute for the
-          underlying figures. A cycle is counted once using its highest VIX peak; the asset detail table lists
-          every local peak above 25.
+          The table defaults to descending signed average peak-to-recovery return, as in the supplied
+          comparison. The separate 0–100 magnitude score is the cross-asset percentile of each asset's average
+          absolute move; it measures movement size, not whether the return was positive and not causal
+          sensitivity to VIX. Daily co-movement is measured separately as Pearson correlation between asset
+          close-to-close percentage returns and daily VIX close point changes on common adjacent observed
+          sessions; the regression slope is asset-return percent per VIX point, and small absolute correlation
+          means weaker linear co-movement in this window. Every qualifying local peak in the selected dates
+          contributes once; shared recovery dates are grouped only for cycle visualization, not for event
+          averages. When daily data is unavailable, the fallback is clearly marked and is less precise.
         </p>
       </section>
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold">Best-to-worst assets</h2>
+            <h2 className="text-2xl font-bold">Asset response ranking</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {sorted.length} of {ranked.length} assets · sort by any metric · open an asset for every peak
               and min/average/max values
@@ -304,14 +400,35 @@ export default function VixResponse() {
           <>
             <div className="hidden overflow-hidden rounded-xl border border-border bg-card card-glow sm:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1120px]">
+                <table className="w-full min-w-[1340px]">
                   <thead className="bg-muted/50">
                     <tr>
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Rank</th>
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Asset</th>
                       <SortHeader
-                        label="Score"
-                        column="sensitivityScore"
+                        label="Magnitude score"
+                        column="magnitudeScore"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
+                        label="Avg absolute move"
+                        column="absoluteMove"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
+                        label="|Daily VIX corr. r|"
+                        column="vixCorrelation"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
+                        label="Return slope (%/pt)"
+                        column="vixSlope"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
@@ -379,7 +496,24 @@ export default function VixResponse() {
                           </Link>
                         </td>
                         <td className="p-3 text-right font-mono font-bold text-primary">
-                          {formatNumber(item.sensitivityScore, 1)}
+                          {formatNumber(item.magnitudeScore, 1)}
+                        </td>
+                        <td className="p-3 text-right font-mono font-semibold">
+                          {formatMagnitudePercent(item.stats.absoluteReboundPct.average)}
+                        </td>
+                        <td
+                          className="p-3 text-right font-mono"
+                          title={`Signed Pearson correlation: ${formatCorrelation(item.vixCoMovement.correlation)}; ${item.vixCoMovement.observations} observations`}
+                        >
+                          {item.vixCoMovement.correlation === null
+                            ? '—'
+                            : formatNumber(Math.abs(item.vixCoMovement.correlation), 3)}
+                        </td>
+                        <td
+                          className="p-3 text-right font-mono"
+                          title="Regression slope: asset return percent per one VIX point change"
+                        >
+                          {formatVixSlope(item.vixCoMovement.returnPctPerVixPoint)}
                         </td>
                         <td className="p-3 text-right font-mono">
                           {formatMagnitudePercent(item.stats.drawdownPct.average)}
@@ -426,15 +560,31 @@ export default function VixResponse() {
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="font-mono text-xl font-bold text-primary">
-                        {formatNumber(item.sensitivityScore, 1)}
+                        {formatMagnitudePercent(item.stats.absoluteReboundPct.average)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">score / 100</p>
+                      <p className="text-[11px] text-muted-foreground">average absolute move</p>
                     </div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/70 pt-3 text-xs">
                     <div>
+                      <p className="text-muted-foreground">Magnitude score</p>
+                      <p className="font-mono">{formatNumber(item.magnitudeScore, 1)} / 100</p>
+                    </div>
+                    <div>
                       <p className="text-muted-foreground">Avg drawdown</p>
                       <p className="font-mono">{formatMagnitudePercent(item.stats.drawdownPct.average)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Daily VIX correlation (r)</p>
+                      <p className="font-mono">{formatCorrelation(item.vixCoMovement.correlation)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Common sessions</p>
+                      <p className="font-mono">{item.vixCoMovement.observations}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Return slope (%/VIX point)</p>
+                      <p className="font-mono">{formatVixSlope(item.vixCoMovement.returnPctPerVixPoint)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Avg rebound</p>
@@ -465,10 +615,10 @@ export default function VixResponse() {
       </section>
 
       <p className="text-xs text-muted-foreground">
-        Baseline is the last available weekly close before a peak. Peak VIX values use daily intraday highs;
-        recovery begins when the daily VIX close is below 20. Week-based moving averages and baseline-return
-        timing are estimates from the weekly series. This analysis is for research only, not investment
-        advice.
+        VIX peaks use daily highs and are strict local maxima above {VIX_RESPONSE_PEAK_THRESHOLD}; recovery is
+        the first daily VIX close below {VIX_RESPONSE_RECOVERY_THRESHOLD}. Asset peak/recovery prices use the
+        latest available asset close on or before the respective VIX date. Baselines, moving averages, and
+        time-to-baseline recovery remain weekly estimates. This is historical analysis, not investment advice.
       </p>
     </div>
   )
