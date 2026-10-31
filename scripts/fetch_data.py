@@ -16,6 +16,7 @@ import os
 import random
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from custom_asset_registry import load_custom_assets
 
 try:
     import numpy as np
@@ -28,6 +29,7 @@ VIX_THRESHOLD_PEAK = 21.0
 VIX_THRESHOLD_RECOVERY = 20.0
 LOOKBACK_YEARS = 6
 OUTPUT = Path(__file__).resolve().parent.parent / "public" / "data" / "vix-pulse.json"
+CUSTOM_ASSETS_FILE = Path(__file__).resolve().parent / "custom_assets.json"
 
 # ISIN, display ticker, name, type, currency, exchange, Yahoo Finance ticker
 ASSETS: list[tuple[str, str, str, str, str, str, str]] = [
@@ -122,6 +124,38 @@ FALLBACK_TICKERS: dict[str, list[str]] = {
     "LU1589349734": ["MIVU.AS", "MIVU.PA"],
     "CNE1000001Z5": ["BACHY", "3988.HK"],
 }
+
+
+def load_asset_catalog() -> tuple[list[tuple[str, str, str, str, str, str, str]], dict[str, float]]:
+    """Load the committed Yahoo asset catalog entries in addition to built-ins."""
+    try:
+        custom_assets = load_custom_assets(CUSTOM_ASSETS_FILE)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    catalog = list(ASSETS)
+    for asset in custom_assets:
+        catalog.append(
+            (
+                asset["isin"],
+                asset["ticker"],
+                asset["name"],
+                asset["type"],
+                asset["currency"],
+                asset["exchange"],
+                asset["yahooTicker"],
+            )
+        )
+
+    for field_index, label in ((0, "ISIN"), (1, "display ticker"), (6, "Yahoo ticker")):
+        seen: set[str] = set()
+        for asset in catalog:
+            value = asset[field_index].upper()
+            if value in seen:
+                raise SystemExit(f"Duplicate {label} in the asset catalog: {value}")
+            seen.add(value)
+    price_divisors = {asset["ticker"]: asset["priceDivisor"] for asset in custom_assets}
+    return catalog, price_divisors
 
 
 def clean_frame(frame: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -276,6 +310,7 @@ def build_asset(
     vix_peaks: list[dict],
     weekly_dates: list[str],
     weekly_vix: list[float],
+    custom_price_divisor: float | None = None,
 ) -> dict:
     is_placeholder = asset_daily is None or asset_daily.empty
     if is_placeholder:
@@ -284,6 +319,8 @@ def build_asset(
         asset_daily = simulate_daily(vix_daily.index, name)
 
     display_currency, price_divisor = PRICE_ADJUSTMENTS.get(ticker, (currency, 1.0))
+    if custom_price_divisor is not None:
+        price_divisor = custom_price_divisor
     daily_close = asset_daily["Close"].astype(float) / price_divisor
     peaks: list[dict] = []
     for peak in vix_peaks:
@@ -445,9 +482,12 @@ def main() -> None:
     vix_peaks = find_vix_peaks(vix_daily)
     print(f"Detected {len(vix_peaks)} VIX peaks; weekly window {weekly_dates[0]} -> {weekly_dates[-1]}")
 
+    asset_catalog, custom_price_divisors = load_asset_catalog()
     assets: list[dict] = []
-    for position, (isin, ticker, name, asset_type, currency, exchange, yf_ticker) in enumerate(ASSETS, 1):
-        print(f"[{position:02d}/{len(ASSETS)}] {ticker:<6} {name[:48]}")
+    for position, (isin, ticker, name, asset_type, currency, exchange, yf_ticker) in enumerate(
+        asset_catalog, 1
+    ):
+        print(f"[{position:02d}/{len(asset_catalog)}] {ticker:<6} {name[:48]}")
         daily = fetch_daily(yf_ticker, start, end)
         assets.append(
             build_asset(
@@ -463,6 +503,7 @@ def main() -> None:
                 vix_peaks,
                 weekly_dates,
                 weekly_vix,
+                custom_price_divisors.get(ticker),
             )
         )
 

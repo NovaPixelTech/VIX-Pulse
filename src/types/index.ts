@@ -43,11 +43,9 @@ export type Asset = {
   /** Whether a real asset close exists on each aligned VIX trading date. */
   dailyPriceObserved?: boolean[]
   placeholder?: boolean
-  /** Browser-only history and provider metadata for user-added assets. */
+  /** Browser-only dated history for user-added assets. */
   customPriceHistory?: Array<{ date: string; close: number }>
-  customDataSource?: 'Twelve Data' | 'Manual CSV'
-  customProviderSymbol?: string
-  customLastFetchedAt?: string
+  customDataSource?: 'Twelve Data' | 'Manual CSV' | 'Yahoo Finance CSV' | 'Other CSV'
 }
 
 export type DailyVixSeries = {

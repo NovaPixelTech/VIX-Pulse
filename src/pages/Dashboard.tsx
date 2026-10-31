@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusCircle, RefreshCw, Search, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react'
+import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3, ExternalLink } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearch } from '@/lib/utils'
@@ -8,29 +8,11 @@ import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
-import { createCustomAssetFromCsv, createCustomAssetFromPrices } from '@/lib/customAssets'
-import {
-  getTwelveDataApiKey,
-  saveTwelveDataApiKey,
-  searchTwelveDataInstruments,
-  fetchTwelveDataDailyPrices,
-  type TwelveDataInstrument,
-} from '@/lib/twelveData'
+import { createCustomAssetFromCsv, parseDailyPriceCsv } from '@/lib/customAssets'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
 
-function getAssetType(instrumentType: string): Asset['type'] {
-  const type = instrumentType.toLowerCase()
-  if (type.includes('etf')) return 'etf'
-  if (type.includes('adr') || type.includes('depositary')) return 'adr'
-  if (type.includes('index')) return 'index'
-  if (type.includes('commodity') || type.includes('etc')) return 'etc'
-  return 'stock'
-}
-
-function looksLikeIsin(value: string): boolean {
-  return /^[A-Z]{2}[A-Z0-9]{10}$/i.test(value.trim())
-}
+const PUBLISH_WORKFLOW_URL = 'https://github.com/NovaPixelTech/VIX-Pulse/actions/workflows/deploy.yml'
 
 function SortHeader({
   label,
@@ -96,17 +78,7 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function Dashboard() {
-  const {
-    data,
-    loading,
-    error,
-    addCustomAsset,
-    removeCustomAsset,
-    customAssets,
-    refreshCustomAssets,
-    refreshingCustomAssets,
-    customAssetRefreshError,
-  } = useData()
+  const { data, loading, error, addCustomAsset, removeCustomAsset, customAssets } = useData()
   const navigate = useNavigate()
   usePageTitle()
   const [search, setSearch] = useState('')
@@ -114,12 +86,8 @@ export default function Dashboard() {
   const [sortAsc, setSortAsc] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
-  const [apiKeyInput, setApiKeyInput] = useState(() => getTwelveDataApiKey())
-  const [providerQuery, setProviderQuery] = useState('')
-  const [providerResults, setProviderResults] = useState<TwelveDataInstrument[]>([])
-  const [providerBusy, setProviderBusy] = useState(false)
-  const [providerError, setProviderError] = useState<string | null>(null)
-  const [providerNotice, setProviderNotice] = useState<string | null>(null)
+  const [addSuccess, setAddSuccess] = useState<string | null>(null)
+  const [csvFileInfo, setCsvFileInfo] = useState<string | null>(null)
   const [addForm, setAddForm] = useState({
     ticker: '',
     name: '',
@@ -128,86 +96,8 @@ export default function Dashboard() {
     currency: 'USD',
     exchange: 'NASDAQ',
     priceCsv: '',
+    priceSource: 'Yahoo Finance CSV' as 'Yahoo Finance CSV' | 'Other CSV',
   })
-
-  const handleProviderSearch = async () => {
-    const query = providerQuery.trim()
-    if (!query) {
-      setProviderError('Enter a ticker, company name, or ISIN to search.')
-      return
-    }
-    if (!apiKeyInput.trim() || getTwelveDataApiKey() !== apiKeyInput.trim()) {
-      setProviderError('Save your Twelve Data API key locally before searching.')
-      return
-    }
-    setProviderBusy(true)
-    setProviderError(null)
-    setProviderNotice(null)
-    setProviderResults([])
-    try {
-      const results = await searchTwelveDataInstruments(query, apiKeyInput)
-      setProviderResults(results)
-      if (results.length === 0) {
-        setProviderError(
-          looksLikeIsin(query)
-            ? 'No matching instrument was found. ISIN search may require enabling Twelve Data’s ISIN add-on.'
-            : 'No matching instruments were found. Check the search text and try again.',
-        )
-      }
-    } catch (cause) {
-      setProviderError(cause instanceof Error ? cause.message : 'Could not search Twelve Data.')
-    } finally {
-      setProviderBusy(false)
-    }
-  }
-
-  const handleAddProviderAsset = async (instrument: TwelveDataInstrument) => {
-    if (!data?.dailyVix || !data.dailyVix.dates[0]) {
-      setProviderError('The shared daily VIX calendar is unavailable, so this asset cannot be analyzed yet.')
-      return
-    }
-    if (!apiKeyInput.trim() || getTwelveDataApiKey() !== apiKeyInput.trim()) {
-      setProviderError('Save your Twelve Data API key locally before fetching prices.')
-      return
-    }
-    setProviderBusy(true)
-    setProviderError(null)
-    setProviderNotice(null)
-    try {
-      const reference = data.assets.find((item) => !item.customDataSource && !item.placeholder)
-      if (!reference) throw new Error('Published reference price data is unavailable for this asset.')
-      const series = await fetchTwelveDataDailyPrices(
-        instrument,
-        apiKeyInput,
-        data.dailyVix.dates[0],
-        new Date().toISOString().slice(0, 10),
-      )
-      const suppliedIsin = instrument.isin || (looksLikeIsin(providerQuery) ? providerQuery.trim() : '')
-      const asset = createCustomAssetFromPrices(
-        {
-          ticker: instrument.symbol,
-          name: instrument.instrument_name,
-          isin: suppliedIsin,
-          type: getAssetType(instrument.instrument_type),
-          currency: series.instrument.currency,
-          exchange: series.instrument.exchange,
-        },
-        series.prices,
-        data.dailyVix,
-        reference,
-      )
-      asset.customDataSource = 'Twelve Data'
-      asset.customProviderSymbol = series.instrument.symbol
-      asset.customLastFetchedAt = new Date().toISOString()
-      addCustomAsset(asset)
-      setProviderNotice(`${asset.ticker} was added and its price history is saved in this browser.`)
-      setProviderResults((results) => results.filter((result) => result.symbol !== instrument.symbol))
-    } catch (cause) {
-      setProviderError(cause instanceof Error ? cause.message : 'Could not download the asset history.')
-    } finally {
-      setProviderBusy(false)
-    }
-  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -318,6 +208,7 @@ export default function Dashboard() {
             onClick={() => {
               setShowAdd((visible) => !visible)
               setAddError(null)
+              setAddSuccess(null)
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
           >
@@ -326,150 +217,21 @@ export default function Dashboard() {
           </button>
         </div>
         {showAdd && (
-          <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-border bg-card p-4 text-left space-y-3">
+          <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-border bg-card p-4 text-left space-y-4">
             <div>
-              <h2 className="font-semibold">Add an asset to this browser</h2>
+              <h2 className="font-semibold">Add an asset using Yahoo Finance CSV</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Search by ticker, company name, or ISIN to find an instrument and download its daily history.
-                Or import a CSV manually below.
+                No provider API key is needed. Download the history from Yahoo Finance, upload its CSV here,
+                and the asset will be saved in this browser for analysis.
               </p>
             </div>
 
-            <section
-              className="space-y-3 rounded-lg border border-border p-3"
-              aria-label="Online asset lookup"
-            >
-              <div>
-                <h3 className="text-sm font-semibold">Online lookup · Twelve Data</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Use your own Twelve Data API key. It is stored in this browser only and sent directly to the
-                  provider; it is not uploaded to VIX Pulse.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={apiKeyInput}
-                  onChange={(event) => {
-                    setApiKeyInput(event.target.value)
-                    setProviderResults([])
-                    setProviderError(null)
-                  }}
-                  aria-label="Twelve Data API key"
-                  placeholder="Twelve Data API key"
-                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      saveTwelveDataApiKey(apiKeyInput)
-                      setProviderError(null)
-                      setProviderNotice(
-                        apiKeyInput.trim()
-                          ? 'API key saved in this browser.'
-                          : 'Saved API key removed from this browser.',
-                      )
-                      if (apiKeyInput.trim()) void refreshCustomAssets(false)
-                    } catch (cause) {
-                      setProviderError(cause instanceof Error ? cause.message : 'Could not save the API key.')
-                    }
-                  }}
-                  className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
-                >
-                  Save key locally
-                </button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  value={providerQuery}
-                  disabled={providerBusy}
-                  onChange={(event) => {
-                    setProviderQuery(event.target.value)
-                    setProviderResults([])
-                    setProviderError(null)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void handleProviderSearch()
-                  }}
-                  aria-label="Search ticker, asset name, or ISIN online"
-                  placeholder="Ticker, asset name, or ISIN"
-                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleProviderSearch()}
-                  disabled={providerBusy}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                >
-                  <Search className="h-4 w-4" />
-                  {providerBusy ? 'Working…' : 'Search online'}
-                </button>
-              </div>
-              {providerResults.length > 0 && (
-                <div className="space-y-2" aria-label="Online search results">
-                  {providerResults.map((instrument) => (
-                    <div
-                      key={`${instrument.symbol}-${instrument.exchange}`}
-                      className="flex flex-col justify-between gap-2 rounded-lg bg-muted/40 p-3 sm:flex-row sm:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {instrument.instrument_name}{' '}
-                          <span className="text-muted-foreground">({instrument.symbol})</span>
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {[
-                            instrument.exchange,
-                            instrument.country,
-                            instrument.currency,
-                            instrument.instrument_type,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleAddProviderAsset(instrument)}
-                        disabled={providerBusy}
-                        className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
-                      >
-                        {providerBusy ? 'Fetching…' : 'Fetch & add'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {providerError && (
-                <p className="text-sm text-destructive" role="alert">
-                  {providerError}
-                </p>
-              )}
-              {providerNotice && (
-                <p className="text-sm text-success" role="status">
-                  {providerNotice}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                ISIN search may require the provider&apos;s ISIN add-on. Online prices are sourced from Twelve
-                Data and may differ from the Yahoo Finance history used for built-in assets. When this app is
-                opened, online assets refresh at most once per 24 hours; use the refresh button below to
-                update now.
-              </p>
-            </section>
-
-            <div className="flex items-center gap-2 border-t border-border pt-3">
-              <span className="text-sm font-medium">Manual CSV import</span>
-              <span className="text-xs text-muted-foreground">(no API key required)</span>
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 value={addForm.ticker}
                 onChange={(e) => setAddForm((f) => ({ ...f, ticker: e.target.value }))}
-                aria-label="Ticker or display identifier"
-                placeholder="Ticker / display identifier (optional)"
+                aria-label="Yahoo Finance symbol or ticker"
+                placeholder="Yahoo symbol / ticker (e.g. RHM.DE)"
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               />
               <input
@@ -515,14 +277,65 @@ export default function Dashboard() {
                 className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
               />
             </div>
+
+            <section
+              className="space-y-3 rounded-lg border border-border p-3"
+              aria-label="Yahoo CSV download"
+            >
+              <div>
+                <h3 className="text-sm font-semibold">Step 1 · Download the daily CSV from Yahoo</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enter the Yahoo symbol above, open its history page, choose a date range and Daily
+                  frequency, then use Yahoo&apos;s Download button. Yahoo may ask you to sign in.
+                </p>
+              </div>
+              {addForm.ticker.trim() ? (
+                <a
+                  href={`https://finance.yahoo.com/quote/${encodeURIComponent(addForm.ticker.trim())}/history/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+                >
+                  Open {addForm.ticker.trim()} history on Yahoo Finance
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                </a>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Enter a Yahoo symbol above to open its history page.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Yahoo blocks direct data requests from this static website. This button opens Yahoo itself; it
+                does not send your ticker or data to a VIX Pulse server.
+              </p>
+            </section>
+
             <div>
-              <label htmlFor="custom-asset-csv" className="mb-1 block text-xs text-muted-foreground">
-                Daily price CSV with Date and Adj Close/Close columns (Yahoo Finance export supported)
+              <label htmlFor="csv-price-source" className="mb-1 block text-xs text-muted-foreground">
+                CSV source label
+              </label>
+              <select
+                id="csv-price-source"
+                value={addForm.priceSource}
+                onChange={(e) =>
+                  setAddForm((form) => ({
+                    ...form,
+                    priceSource: e.target.value as 'Yahoo Finance CSV' | 'Other CSV',
+                  }))
+                }
+                className="mb-3 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="Yahoo Finance CSV">Yahoo Finance CSV</option>
+                <option value="Other CSV">Other CSV</option>
+              </select>
+              <label htmlFor="custom-asset-file" className="mb-1 block text-xs text-muted-foreground">
+                Step 2 · Upload the downloaded CSV (Date and Adj Close/Close columns)
               </label>
               <input
                 type="file"
                 accept=".csv,text/csv"
-                aria-label="Import daily price CSV"
+                id="custom-asset-file"
+                aria-label="Upload daily price CSV"
                 onChange={async (event) => {
                   const input = event.currentTarget
                   const file = input.files?.[0]
@@ -530,19 +343,35 @@ export default function Dashboard() {
                   try {
                     const priceCsv = await file.text()
                     setAddForm((form) => ({ ...form, priceCsv }))
+                    setAddSuccess(null)
+                    const prices = parseDailyPriceCsv(priceCsv)
+                    setCsvFileInfo(
+                      `${file.name} · ${prices.length.toLocaleString()} daily prices · ${prices[0].date} to ${prices[prices.length - 1].date}`,
+                    )
                     setAddError(null)
-                  } catch {
-                    setAddError('Could not read that file. Paste the CSV text below instead.')
+                  } catch (cause) {
+                    setCsvFileInfo(null)
+                    setAddError(cause instanceof Error ? cause.message : 'Could not read that CSV file.')
                   } finally {
                     input.value = ''
                   }
                 }}
                 className="mb-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs"
               />
+              {csvFileInfo && (
+                <p className="mb-2 text-xs text-success" role="status">
+                  {csvFileInfo}
+                </p>
+              )}
               <textarea
                 id="custom-asset-csv"
                 value={addForm.priceCsv}
-                onChange={(e) => setAddForm((f) => ({ ...f, priceCsv: e.target.value }))}
+                onChange={(e) => {
+                  setAddForm((f) => ({ ...f, priceCsv: e.target.value }))
+                  setCsvFileInfo(null)
+                  setAddError(null)
+                  setAddSuccess(null)
+                }}
                 placeholder={'Date,Close\n2025-09-01,100.00\n2025-09-02,102.50'}
                 aria-label="Daily dated closing-price CSV"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono"
@@ -554,12 +383,18 @@ export default function Dashboard() {
                 {addError}
               </p>
             )}
+            {addSuccess && (
+              <p className="text-sm text-success" role="status">
+                {addSuccess}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setShowAdd(false)
                   setAddError(null)
+                  setAddSuccess(null)
                 }}
                 className="rounded-lg border border-border px-3 py-1.5 text-sm"
               >
@@ -586,55 +421,64 @@ export default function Dashboard() {
                       currency: 'USD',
                       exchange: 'NASDAQ',
                       priceCsv: '',
+                      priceSource: 'Yahoo Finance CSV',
                     })
+                    setCsvFileInfo(null)
+                    setAddSuccess(`${asset.ticker} was added to analysis and saved in this browser.`)
                   } catch (cause) {
                     setAddError(cause instanceof Error ? cause.message : 'Failed to add asset.')
                   }
                 }}
                 className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm"
               >
-                Save asset locally
+                Upload and add asset
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Imported daily closes use the same VIX dates and peak/recovery calculations as built-in assets.
-              Entries are saved in this browser&apos;s local storage only, not published or synced to other
-              devices.
+              The importer prefers Yahoo&apos;s Adj Close column, aligns prices to the shared VIX calendar,
+              and uses the same peak/recovery calculations as built-in assets. The uploaded history stays in
+              this browser and is not published or synced to other devices.
             </p>
+
+            <section
+              className="space-y-2 rounded-lg border border-border p-3"
+              aria-label="Publish asset to site"
+            >
+              <h3 className="text-sm font-semibold">Optional · Add an asset to the public site</h3>
+              <p className="text-xs text-muted-foreground">
+                The built-in Yahoo data is downloaded by the existing GitHub Actions workflow using yfinance,
+                without a provider API key. To publish a new asset for everyone, repository contributors can
+                run that workflow and enter its Yahoo symbol and metadata. This changes the public catalog; it
+                is separate from the private browser CSV import above.
+              </p>
+              <a
+                href={PUBLISH_WORKFLOW_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Open Yahoo publish workflow
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </a>
+              <p className="text-xs text-muted-foreground">
+                Requires GitHub repository write access. Select the main branch, provide the Yahoo ticker,
+                display ticker/name, ISIN (optional), type, currency, exchange, and price divisor (use 100 for
+                prices quoted in pence), then run the workflow. The asset is published for all visitors only
+                after the full Yahoo snapshot passes validation.
+              </p>
+            </section>
+
             {customAssets.length > 0 && (
               <div className="space-y-2 border-t border-border pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-medium">Saved local assets ({customAssets.length})</h3>
-                  {customAssets.some((asset) => asset.customDataSource === 'Twelve Data') && (
-                    <button
-                      type="button"
-                      onClick={() => void refreshCustomAssets(true)}
-                      disabled={refreshingCustomAssets}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent disabled:opacity-60"
-                    >
-                      <RefreshCw
-                        className={`h-3.5 w-3.5 ${refreshingCustomAssets ? 'animate-spin' : ''}`}
-                        aria-hidden="true"
-                      />
-                      {refreshingCustomAssets ? 'Refreshing…' : 'Refresh online assets'}
-                    </button>
-                  )}
                 </div>
-                {customAssetRefreshError && (
-                  <p className="text-xs text-destructive" role="alert">
-                    {customAssetRefreshError}
-                  </p>
-                )}
                 {customAssets.map((asset) => (
                   <div key={asset.isin} className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate">
                       <strong>{asset.ticker}</strong> · {asset.name}
                       <span className="ml-1 text-xs text-muted-foreground">
-                        ({asset.customDataSource ?? 'Local'}
-                        {asset.customLastFetchedAt
-                          ? ` · updated ${formatDate(asset.customLastFetchedAt.slice(0, 10))}`
-                          : ''}
-                        )
+                        ({asset.customDataSource ?? 'Local'})
                       </span>
                     </span>
                     <button

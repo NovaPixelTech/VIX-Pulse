@@ -4,12 +4,12 @@ A client-side dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved a
 
 ## Features
 
-- **Dashboard**: Global ranking of all 66 assets, search, sortable metrics, latest available daily asset quotes, weekly closes, and a prominent current/last-week VIX overview.
+- **Dashboard**: Global ranking of all published assets, search, sortable metrics, latest available daily asset quotes, weekly closes, and a prominent current/last-week VIX overview.
 - **Asset Detail**: Latest asset quote and daily move plus an aligned daily VIX/price chart when available, grouped green/red VIX recovery periods, rebound arrows, moving averages, and per-peak response metrics.
 - **VIX Response**: Searchable, sortable ranking for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
 - **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart and benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
-- **Local custom assets**: Search Twelve Data by ticker, name, or (when enabled on the provider plan) ISIN, fetch daily adjusted prices, and include the asset in the same VIX analysis. A CSV import remains available. Assets and the optional provider API key are stored only in this browser and can be removed from the dashboard.
+- **Local custom assets**: Open an asset's Yahoo Finance history page from the dashboard, download a daily CSV, upload it, and include it in the same VIX analysis. Custom data is stored only in the current browser and can be removed from the dashboard.
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
 - **Responsive**: Mobile asset cards, mobile bottom navigation, and horizontally scrollable data tables.
 - **Refresh**: Cache-busting refresh button reloads the latest published snapshot on every page. GitHub Actions fetches and publishes market data after weekday market close; a link on the dashboard can start a new download manually.
@@ -41,6 +41,7 @@ npm run build
 npm run test:run
 npm run lint
 npm run format:check
+python -m unittest discover -s scripts -p "test_*.py"
 ```
 
 The chart routes are lazy-loaded so ECharts is not downloaded on the dashboard.
@@ -56,7 +57,7 @@ python scripts/fetch_data.py
 
 The pipeline:
 
-1. Downloads six years of daily `^VIX` and asset history with `yfinance`.
+1. Downloads six years of daily `^VIX` and catalog asset history with `yfinance`.
 2. Finds VIX peak days from daily Highs strictly above 21, with both neighbouring trading-day highs lower.
 3. Finds the first recovery day at or after the peak where the VIX close is below 20.
 4. Calculates asset closes, percent change, days to recovery, and per-asset summaries.
@@ -67,13 +68,19 @@ The pipeline:
 
 `python scripts/generate_data.py` is an offline/placeholder utility and is not used for the published dataset.
 
+### Add an asset to the public catalog
+
+The dashboard's **Open Yahoo publish workflow** link opens the existing GitHub Actions workflow. A repository contributor with write access can run it on `main`, enter a Yahoo Finance ticker and metadata, and let `yfinance` download the history. No Yahoo/provider API key is used. A successful run commits the new catalog entry and generated snapshot, then deploys the public site; an unavailable symbol fails validation rather than publishing placeholder prices. These entries are shared by all visitors. This is separate from the dashboard's local CSV import, which only affects the current browser.
+
+For a browser-local asset, open the Yahoo history page from **Add or manage local assets**, select a date range and **Daily** frequency, use Yahoo's **Download** action, then upload that CSV in the dashboard. The importer prefers Yahoo's `Adj Close` column. Yahoo may require signing in to download. The static app cannot fetch Yahoo data directly because Yahoo does not allow cross-origin browser reads.
+
 ## Deployment
 
 The app is deployed to GitHub Pages at:
 
 <https://novapixeltech.github.io/VIX-Pulse/>
 
-The workflow in `.github/workflows/deploy.yml` builds on every push to `main`, refreshes market data on weekdays after the US close, and publishes `dist`. A manual workflow run can request a fresh data download; it takes a few minutes and requires GitHub Actions access. The in-app refresh button bypasses browser caching and reloads the newest published snapshot; GitHub Pages cannot fetch Yahoo data directly from browser code. User-added online assets use Twelve Data directly from the browser, with each user's own API key. GitHub Pages must use **Source: GitHub Actions**. Vite derives the production base path from `GITHUB_REPOSITORY`, so forks deploy under their own repository name.
+The workflow in `.github/workflows/deploy.yml` builds on every push to `main`, refreshes market data on weekdays after the US close, and publishes `dist`. A manual workflow run can refresh data or add a Yahoo ticker to the public catalog; it uses the same `yfinance` pipeline without a provider API key and requires GitHub repository write access. The in-app refresh button reloads the newest published snapshot; GitHub Pages cannot fetch Yahoo data directly from browser code. GitHub Pages must use **Source: GitHub Actions**. Vite derives the production base path from `GITHUB_REPOSITORY`, so forks deploy under their own repository name.
 
 ## Project Structure
 
@@ -84,7 +91,7 @@ src/
   lib/            calculations, VIX response analytics, navigation, formatting, tests
   pages/          Dashboard, Asset Detail, Compare, VIX Response, About
 public/data/      generated static dataset
-scripts/          real-data pipeline and offline generators
+scripts/          Yahoo data pipeline, public custom-asset catalog, and offline generators
 ```
 
 ## Data Notes
@@ -95,7 +102,7 @@ scripts/          real-data pipeline and offline generators
 - Asset Detail charts and tables use the same individual daily events and the same selectable date window. Grouped recovery cycles are used only for chart shading; summary averages use every qualifying individual peak.
 - The default report window reproduces the supplied script's yfinance range (start 2025-09-01, exclusive end 2026-09-15; thus observations through 2026-09-14). Users can change or clear the date bounds. Price series are Yahoo Finance auto-adjusted closes, which may differ from Digrin or other providers.
 - The VIX Response table defaults to descending signed average peak-to-recovery return, matching the supplied comparison. A separate 0–100 magnitude score ranks average absolute price movement; it is not a performance score or causal measure of VIX sensitivity.
-- Custom assets align dated closes to the shared VIX calendar and use the same event calculations. You can search instruments and download daily adjusted closes through Twelve Data, or import a CSV with `Date` and `Adj Close`/`Close` columns. Obtain a Twelve Data API key and save it in the dashboard; it is kept in browser local storage and sent directly to Twelve Data. ISIN lookup may require enabling the provider's ISIN add-on. Online assets refresh at most once per 24 hours when the app is open, or on manual request; no updates run while the browser is closed. Provider prices can differ from the Yahoo Finance data used for built-in assets. The static site has no backend, so neither the key nor custom assets are shared across browsers/devices.
+- Local custom assets align dated closes to the shared VIX calendar and use the same event calculations. Upload Yahoo Finance daily CSVs with `Date` and `Adj Close`/`Close` columns; the importer prefers adjusted close. The local asset and its dated history are stored in this browser only. Yahoo requests cannot be made directly from the static site because of browser CORS restrictions, so the user downloads the CSV from Yahoo's own history page. To add an asset to the shared public catalog without a provider key, run the repository's GitHub Actions workflow; it downloads with `yfinance` and commits the generated snapshot. That shared path requires repository write access.
 - Daily VIX co-movement is Pearson correlation between asset close-to-close percentage returns and VIX close point changes; a regression slope (% asset return per VIX point) is also shown. Only adjacent common sessions with real asset closes are used. Forward-filled holidays are excluded. These estimates are descriptive, not causal.
 - Current VIX and asset quote cards use the latest quote included in the generated snapshot and display its date. Weekly chart history remains aligned to completed Friday closes.
 - Baselines, moving averages, and time to regain baseline are weekly-close estimates; peak-to-recovery returns use daily closes.

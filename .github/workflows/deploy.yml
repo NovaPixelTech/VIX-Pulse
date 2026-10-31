@@ -13,6 +13,52 @@ on:
         required: false
         type: boolean
         default: true
+      asset_yahoo_ticker:
+        description: Optional Yahoo Finance ticker to add to the public catalog (for example RHM.DE)
+        required: false
+        type: string
+        default: ''
+      asset_display_ticker:
+        description: Optional ticker label shown in VIX Pulse
+        required: false
+        type: string
+        default: ''
+      asset_name:
+        description: Optional full asset name
+        required: false
+        type: string
+        default: ''
+      asset_isin:
+        description: Optional ISIN (a local custom ID is generated if blank)
+        required: false
+        type: string
+        default: ''
+      asset_type:
+        description: Asset type
+        required: false
+        type: choice
+        options:
+          - stock
+          - etf
+          - etc
+          - adr
+          - index
+        default: stock
+      asset_currency:
+        description: Three-letter price currency, such as USD, EUR, or GBP
+        required: false
+        type: string
+        default: USD
+      asset_exchange:
+        description: Exchange label shown in VIX Pulse
+        required: false
+        type: string
+        default: Yahoo Finance
+      asset_price_divisor:
+        description: Divide Yahoo prices by this value (use 100 for pence quoted as GBP)
+        required: false
+        type: string
+        default: '1'
 
 permissions:
   contents: read
@@ -25,7 +71,7 @@ concurrency:
 
 jobs:
   refresh-data:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh_market_data)
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.refresh_market_data || inputs.asset_yahoo_ticker != ''))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,6 +88,20 @@ jobs:
           cache-dependency-path: scripts/requirements.txt
       - name: Install data dependencies
         run: pip install -r scripts/requirements.txt
+      - name: Test Yahoo asset registry
+        run: python -m unittest discover -s scripts -p 'test_*.py'
+      - name: Register requested Yahoo asset
+        if: github.event_name == 'workflow_dispatch' && inputs.asset_yahoo_ticker != ''
+        run: python scripts/add_custom_asset.py
+        env:
+          ASSET_YAHOO_TICKER: ${{ inputs.asset_yahoo_ticker }}
+          ASSET_DISPLAY_TICKER: ${{ inputs.asset_display_ticker }}
+          ASSET_NAME: ${{ inputs.asset_name }}
+          ASSET_ISIN: ${{ inputs.asset_isin }}
+          ASSET_TYPE: ${{ inputs.asset_type }}
+          ASSET_CURRENCY: ${{ inputs.asset_currency }}
+          ASSET_EXCHANGE: ${{ inputs.asset_exchange }}
+          ASSET_PRICE_DIVISOR: ${{ inputs.asset_price_divisor }}
       - name: Download and validate market data
         run: python scripts/fetch_data.py
         env:
@@ -51,7 +111,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/data/vix-pulse.json
+          git add public/data/vix-pulse.json scripts/custom_assets.json
           if git diff --cached --quiet; then
             echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           else

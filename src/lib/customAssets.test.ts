@@ -31,7 +31,7 @@ describe('custom asset imports', () => {
     expect(
       parseDailyPriceCsv(
         [
-          'Date,Open,High,Low,Close,Adj Close,Volume',
+          '\uFEFFDate,Open,High,Low,Close,Adj Close,Volume',
           '2025-09-03,109,111,108,110,110.5,1000',
           '2025-09-02,99,101,98,100,100.25,1200',
         ].join('\n'),
@@ -51,6 +51,7 @@ describe('custom asset imports', () => {
         type: 'stock',
         currency: 'USD',
         exchange: 'NASDAQ',
+        priceSource: 'Yahoo Finance CSV',
         priceCsv: [
           'Date,Close',
           '2025-08-29,90',
@@ -78,6 +79,7 @@ describe('custom asset imports', () => {
       percentChange: 10,
     })
     expect(asset.latestQuote).toMatchObject({ price: 112, date: '2025-09-04', previousPrice: 110 })
+    expect(asset.customDataSource).toBe('Yahoo Finance CSV')
     const [rankedAsset] = rankVixResponses([asset], 21, 20, dailyVix)
     expect(rankedAsset.asset.isin).toBe(asset.isin)
     expect(rankedAsset.stats.reboundPct.average).toBeCloseTo(10, 8)

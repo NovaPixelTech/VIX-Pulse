@@ -13,6 +13,7 @@ export type CustomAssetInput = {
   currency: string
   exchange: string
   priceCsv: string
+  priceSource?: 'Yahoo Finance CSV' | 'Other CSV'
 }
 
 export type CustomAssetMetadataInput = Omit<CustomAssetInput, 'priceCsv'>
@@ -64,7 +65,12 @@ export function parseDailyPriceCsv(csv: string): DatedPrice[] {
       ? ';'
       : ','
   const split = (line: string) => line.split(delimiter).map((value) => value.trim())
-  const firstRow = split(lines[0]).map((value) => value.replace(/^"|"$/g, '').toLowerCase())
+  const firstRow = split(lines[0]).map((value) =>
+    value
+      .replace(/^\uFEFF/, '')
+      .replace(/^"|"$/g, '')
+      .toLowerCase(),
+  )
   const hasHeader = firstRow.some((value) => /^(date|datetime|timestamp)$/.test(value))
 
   let dateIndex = 0
@@ -200,6 +206,6 @@ export function createCustomAssetFromCsv(
 ): Asset {
   return {
     ...createCustomAssetFromPrices(input, parseDailyPriceCsv(input.priceCsv), dailyVix, weeklyReference),
-    customDataSource: 'Manual CSV',
+    customDataSource: input.priceSource ?? 'Other CSV',
   }
 }

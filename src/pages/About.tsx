@@ -202,12 +202,13 @@ export default function About() {
           <code className="px-1 py-0.5 bg-muted rounded">yfinance</code> and stored as static JSON in{' '}
           <code className="px-1 py-0.5 bg-muted rounded">public/data/vix-pulse.json</code>. The included
           Python script (<code className="px-1 py-0.5 bg-muted rounded">scripts/fetch_data.py</code>)
-          regenerates all 66 assets and VIX series following the methodology above.
+          regenerates the published assets and VIX series following the methodology above.
         </p>
         <p className="text-sm text-muted-foreground">
           Prices retain each security&apos;s quote currency. London-listed instruments quoted in pence are
           normalised to pounds so values and currency labels stay consistent. The app runs 100% client-side
-          with no backend, API keys, or external runtime calls.
+          with no backend or API keys. You can download a Yahoo CSV and import it into this browser, or
+          repository contributors can run the Yahoo workflow to publish an asset for everyone.
         </p>
       </section>
 
