@@ -490,6 +490,11 @@ export default function VixResponse() {
                             <span className="font-semibold group-hover:text-primary">
                               {item.asset.ticker}
                             </span>
+                            {item.asset.customDataSource && (
+                              <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                                {item.asset.customDataSource}
+                              </span>
+                            )}
                             <span className="block max-w-56 truncate text-xs text-muted-foreground">
                               {item.asset.name}
                             </span>
@@ -555,6 +560,11 @@ export default function VixResponse() {
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-muted-foreground">#{index + 1}</span>
                         <span className="font-semibold">{item.asset.ticker}</span>
+                        {item.asset.customDataSource && (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {item.asset.customDataSource}
+                          </span>
+                        )}
                       </div>
                       <p className="mt-0.5 truncate text-sm text-muted-foreground">{item.asset.name}</p>
                     </div>

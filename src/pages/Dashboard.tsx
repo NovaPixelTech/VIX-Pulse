@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react'
+import { PlusCircle, RefreshCw, Search, TrendingUp, TrendingDown, BarChart3 } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearch } from '@/lib/utils'
@@ -8,9 +8,29 @@ import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
-import { createCustomAssetFromCsv } from '@/lib/customAssets'
+import { createCustomAssetFromCsv, createCustomAssetFromPrices } from '@/lib/customAssets'
+import {
+  getTwelveDataApiKey,
+  saveTwelveDataApiKey,
+  searchTwelveDataInstruments,
+  fetchTwelveDataDailyPrices,
+  type TwelveDataInstrument,
+} from '@/lib/twelveData'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
+
+function getAssetType(instrumentType: string): Asset['type'] {
+  const type = instrumentType.toLowerCase()
+  if (type.includes('etf')) return 'etf'
+  if (type.includes('adr') || type.includes('depositary')) return 'adr'
+  if (type.includes('index')) return 'index'
+  if (type.includes('commodity') || type.includes('etc')) return 'etc'
+  return 'stock'
+}
+
+function looksLikeIsin(value: string): boolean {
+  return /^[A-Z]{2}[A-Z0-9]{10}$/i.test(value.trim())
+}
 
 function SortHeader({
   label,
@@ -76,7 +96,17 @@ function Sparkline({ data }: { data: number[] }) {
 }
 
 export default function Dashboard() {
-  const { data, loading, error, addCustomAsset, removeCustomAsset, customAssets } = useData()
+  const {
+    data,
+    loading,
+    error,
+    addCustomAsset,
+    removeCustomAsset,
+    customAssets,
+    refreshCustomAssets,
+    refreshingCustomAssets,
+    customAssetRefreshError,
+  } = useData()
   const navigate = useNavigate()
   usePageTitle()
   const [search, setSearch] = useState('')
@@ -84,6 +114,12 @@ export default function Dashboard() {
   const [sortAsc, setSortAsc] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [apiKeyInput, setApiKeyInput] = useState(() => getTwelveDataApiKey())
+  const [providerQuery, setProviderQuery] = useState('')
+  const [providerResults, setProviderResults] = useState<TwelveDataInstrument[]>([])
+  const [providerBusy, setProviderBusy] = useState(false)
+  const [providerError, setProviderError] = useState<string | null>(null)
+  const [providerNotice, setProviderNotice] = useState<string | null>(null)
   const [addForm, setAddForm] = useState({
     ticker: '',
     name: '',
@@ -93,6 +129,85 @@ export default function Dashboard() {
     exchange: 'NASDAQ',
     priceCsv: '',
   })
+
+  const handleProviderSearch = async () => {
+    const query = providerQuery.trim()
+    if (!query) {
+      setProviderError('Enter a ticker, company name, or ISIN to search.')
+      return
+    }
+    if (!apiKeyInput.trim() || getTwelveDataApiKey() !== apiKeyInput.trim()) {
+      setProviderError('Save your Twelve Data API key locally before searching.')
+      return
+    }
+    setProviderBusy(true)
+    setProviderError(null)
+    setProviderNotice(null)
+    setProviderResults([])
+    try {
+      const results = await searchTwelveDataInstruments(query, apiKeyInput)
+      setProviderResults(results)
+      if (results.length === 0) {
+        setProviderError(
+          looksLikeIsin(query)
+            ? 'No matching instrument was found. ISIN search may require enabling Twelve Data’s ISIN add-on.'
+            : 'No matching instruments were found. Check the search text and try again.',
+        )
+      }
+    } catch (cause) {
+      setProviderError(cause instanceof Error ? cause.message : 'Could not search Twelve Data.')
+    } finally {
+      setProviderBusy(false)
+    }
+  }
+
+  const handleAddProviderAsset = async (instrument: TwelveDataInstrument) => {
+    if (!data?.dailyVix || !data.dailyVix.dates[0]) {
+      setProviderError('The shared daily VIX calendar is unavailable, so this asset cannot be analyzed yet.')
+      return
+    }
+    if (!apiKeyInput.trim() || getTwelveDataApiKey() !== apiKeyInput.trim()) {
+      setProviderError('Save your Twelve Data API key locally before fetching prices.')
+      return
+    }
+    setProviderBusy(true)
+    setProviderError(null)
+    setProviderNotice(null)
+    try {
+      const reference = data.assets.find((item) => !item.customDataSource && !item.placeholder)
+      if (!reference) throw new Error('Published reference price data is unavailable for this asset.')
+      const series = await fetchTwelveDataDailyPrices(
+        instrument,
+        apiKeyInput,
+        data.dailyVix.dates[0],
+        new Date().toISOString().slice(0, 10),
+      )
+      const suppliedIsin = instrument.isin || (looksLikeIsin(providerQuery) ? providerQuery.trim() : '')
+      const asset = createCustomAssetFromPrices(
+        {
+          ticker: instrument.symbol,
+          name: instrument.instrument_name,
+          isin: suppliedIsin,
+          type: getAssetType(instrument.instrument_type),
+          currency: series.instrument.currency,
+          exchange: series.instrument.exchange,
+        },
+        series.prices,
+        data.dailyVix,
+        reference,
+      )
+      asset.customDataSource = 'Twelve Data'
+      asset.customProviderSymbol = series.instrument.symbol
+      asset.customLastFetchedAt = new Date().toISOString()
+      addCustomAsset(asset)
+      setProviderNotice(`${asset.ticker} was added and its price history is saved in this browser.`)
+      setProviderResults((results) => results.filter((result) => result.symbol !== instrument.symbol))
+    } catch (cause) {
+      setProviderError(cause instanceof Error ? cause.message : 'Could not download the asset history.')
+    } finally {
+      setProviderBusy(false)
+    }
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -215,9 +330,139 @@ export default function Dashboard() {
             <div>
               <h2 className="font-semibold">Add an asset to this browser</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Enter at least one identifier (ticker, name, or ISIN) and paste dated daily prices. This
-                static site cannot resolve identifiers or download arbitrary market history automatically.
+                Search by ticker, company name, or ISIN to find an instrument and download its daily history.
+                Or import a CSV manually below.
               </p>
+            </div>
+
+            <section
+              className="space-y-3 rounded-lg border border-border p-3"
+              aria-label="Online asset lookup"
+            >
+              <div>
+                <h3 className="text-sm font-semibold">Online lookup · Twelve Data</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use your own Twelve Data API key. It is stored in this browser only and sent directly to the
+                  provider; it is not uploaded to VIX Pulse.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={apiKeyInput}
+                  onChange={(event) => {
+                    setApiKeyInput(event.target.value)
+                    setProviderResults([])
+                    setProviderError(null)
+                  }}
+                  aria-label="Twelve Data API key"
+                  placeholder="Twelve Data API key"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      saveTwelveDataApiKey(apiKeyInput)
+                      setProviderError(null)
+                      setProviderNotice(
+                        apiKeyInput.trim()
+                          ? 'API key saved in this browser.'
+                          : 'Saved API key removed from this browser.',
+                      )
+                      if (apiKeyInput.trim()) void refreshCustomAssets(false)
+                    } catch (cause) {
+                      setProviderError(cause instanceof Error ? cause.message : 'Could not save the API key.')
+                    }
+                  }}
+                  className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent"
+                >
+                  Save key locally
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={providerQuery}
+                  disabled={providerBusy}
+                  onChange={(event) => {
+                    setProviderQuery(event.target.value)
+                    setProviderResults([])
+                    setProviderError(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void handleProviderSearch()
+                  }}
+                  aria-label="Search ticker, asset name, or ISIN online"
+                  placeholder="Ticker, asset name, or ISIN"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleProviderSearch()}
+                  disabled={providerBusy}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                >
+                  <Search className="h-4 w-4" />
+                  {providerBusy ? 'Working…' : 'Search online'}
+                </button>
+              </div>
+              {providerResults.length > 0 && (
+                <div className="space-y-2" aria-label="Online search results">
+                  {providerResults.map((instrument) => (
+                    <div
+                      key={`${instrument.symbol}-${instrument.exchange}`}
+                      className="flex flex-col justify-between gap-2 rounded-lg bg-muted/40 p-3 sm:flex-row sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {instrument.instrument_name}{' '}
+                          <span className="text-muted-foreground">({instrument.symbol})</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {[
+                            instrument.exchange,
+                            instrument.country,
+                            instrument.currency,
+                            instrument.instrument_type,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleAddProviderAsset(instrument)}
+                        disabled={providerBusy}
+                        className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+                      >
+                        {providerBusy ? 'Fetching…' : 'Fetch & add'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {providerError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {providerError}
+                </p>
+              )}
+              {providerNotice && (
+                <p className="text-sm text-success" role="status">
+                  {providerNotice}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                ISIN search may require the provider&apos;s ISIN add-on. Online prices are sourced from Twelve
+                Data and may differ from the Yahoo Finance history used for built-in assets. When this app is
+                opened, online assets refresh at most once per 24 hours; use the refresh button below to
+                update now.
+              </p>
+            </section>
+
+            <div className="flex items-center gap-2 border-t border-border pt-3">
+              <span className="text-sm font-medium">Manual CSV import</span>
+              <span className="text-xs text-muted-foreground">(no API key required)</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
@@ -358,11 +603,39 @@ export default function Dashboard() {
             </p>
             {customAssets.length > 0 && (
               <div className="space-y-2 border-t border-border pt-3">
-                <h3 className="text-sm font-medium">Saved local assets ({customAssets.length})</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium">Saved local assets ({customAssets.length})</h3>
+                  {customAssets.some((asset) => asset.customDataSource === 'Twelve Data') && (
+                    <button
+                      type="button"
+                      onClick={() => void refreshCustomAssets(true)}
+                      disabled={refreshingCustomAssets}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-accent disabled:opacity-60"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${refreshingCustomAssets ? 'animate-spin' : ''}`}
+                        aria-hidden="true"
+                      />
+                      {refreshingCustomAssets ? 'Refreshing…' : 'Refresh online assets'}
+                    </button>
+                  )}
+                </div>
+                {customAssetRefreshError && (
+                  <p className="text-xs text-destructive" role="alert">
+                    {customAssetRefreshError}
+                  </p>
+                )}
                 {customAssets.map((asset) => (
                   <div key={asset.isin} className="flex items-center justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate">
                       <strong>{asset.ticker}</strong> · {asset.name}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({asset.customDataSource ?? 'Local'}
+                        {asset.customLastFetchedAt
+                          ? ` · updated ${formatDate(asset.customLastFetchedAt.slice(0, 10))}`
+                          : ''}
+                        )
+                      </span>
                     </span>
                     <button
                       type="button"
@@ -535,7 +808,14 @@ export default function Dashboard() {
                       <td className="p-4 font-mono text-muted-foreground">#{idx + 1}</td>
                       <td className="p-4">
                         <div>
-                          <p className="font-semibold">{asset.ticker}</p>
+                          <p className="flex items-center gap-2 font-semibold">
+                            {asset.ticker}
+                            {asset.customDataSource && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                                {asset.customDataSource}
+                              </span>
+                            )}
+                          </p>
                           <p className="text-sm text-muted-foreground truncate max-w-[200px]">{asset.name}</p>
                         </div>
                       </td>
@@ -615,6 +895,11 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">#{idx + 1}</span>
                       <span className="font-semibold">{asset.ticker}</span>
+                      {asset.customDataSource && (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {asset.customDataSource}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-0.5 truncate text-sm text-muted-foreground">{asset.name}</p>
                     <p className="mt-1 font-mono text-[11px] text-muted-foreground">{asset.isin}</p>

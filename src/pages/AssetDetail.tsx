@@ -549,6 +549,7 @@ export default function AssetDetail() {
         </h1>
         <p className="text-muted-foreground mt-1">
           {asset.isin} • {asset.exchange} • {asset.type.toUpperCase()} • {asset.currency}
+          {asset.customDataSource ? ` • Price source: ${asset.customDataSource}` : ''}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           Latest quote{' '}

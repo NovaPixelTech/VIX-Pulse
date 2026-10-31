@@ -15,7 +15,9 @@ export type CustomAssetInput = {
   priceCsv: string
 }
 
-type DatedPrice = { date: string; close: number }
+export type CustomAssetMetadataInput = Omit<CustomAssetInput, 'priceCsv'>
+
+export type DatedPrice = { date: string; close: number }
 
 function parseDate(value: string): string | null {
   const trimmed = value.trim().replace(/^"|"$/g, '')
@@ -107,8 +109,9 @@ function pricesOnDates(prices: DatedPrice[], dates: string[]): Array<number | nu
   })
 }
 
-export function createCustomAssetFromCsv(
-  input: CustomAssetInput,
+export function createCustomAssetFromPrices(
+  input: CustomAssetMetadataInput,
+  prices: DatedPrice[],
   dailyVix: DailyVixSeries,
   weeklyReference: Asset,
 ): Asset {
@@ -127,7 +130,7 @@ export function createCustomAssetFromCsv(
     throw new Error('Daily VIX data is unavailable, so this asset cannot use the same event analysis yet.')
   }
 
-  const prices = parseDailyPriceCsv(input.priceCsv)
+  if (prices.length < 2) throw new Error('At least two daily closing prices are required.')
   const priceByDate = new Map(prices.map(({ date, close }) => [date, close]))
   const observedSessions = dailyVix.dates.filter((date) => priceByDate.has(date)).length
   if (observedSessions < 2) {
@@ -155,6 +158,7 @@ export function createCustomAssetFromCsv(
     },
     dailyPriceSeries,
     dailyPriceObserved,
+    customPriceHistory: prices,
     placeholder: false,
   }
 
@@ -165,16 +169,16 @@ export function createCustomAssetFromCsv(
     dailyVix,
   )
   const recoveredPeaks = asset.peaks.filter((peak) => peak.percentChange !== null)
-  if (recoveredPeaks.length === 0) {
-    throw new Error('No complete VIX peak/recovery events overlap the imported price history.')
-  }
-  asset.summary = {
-    meanChange: recoveredPeaks.reduce((sum, peak) => sum + peak.percentChange!, 0) / recoveredPeaks.length,
-    maxChange: Math.max(...recoveredPeaks.map((peak) => peak.percentChange!)),
-    meanDays:
-      recoveredPeaks.reduce((sum, peak) => sum + (peak.daysToRecovery ?? 0), 0) / recoveredPeaks.length,
-    meanVix: recoveredPeaks.reduce((sum, peak) => sum + peak.vixPeakValue, 0) / recoveredPeaks.length,
-  }
+  asset.summary = recoveredPeaks.length
+    ? {
+        meanChange:
+          recoveredPeaks.reduce((sum, peak) => sum + peak.percentChange!, 0) / recoveredPeaks.length,
+        maxChange: Math.max(...recoveredPeaks.map((peak) => peak.percentChange!)),
+        meanDays:
+          recoveredPeaks.reduce((sum, peak) => sum + (peak.daysToRecovery ?? 0), 0) / recoveredPeaks.length,
+        meanVix: recoveredPeaks.reduce((sum, peak) => sum + peak.vixPeakValue, 0) / recoveredPeaks.length,
+      }
+    : { meanChange: 0, maxChange: 0, meanDays: 0, meanVix: 0 }
 
   const latest = prices[prices.length - 1]
   const previous = prices[prices.length - 2]
@@ -187,4 +191,15 @@ export function createCustomAssetFromCsv(
     changePct: ((latest.close - previous.close) / previous.close) * 100,
   }
   return asset
+}
+
+export function createCustomAssetFromCsv(
+  input: CustomAssetInput,
+  dailyVix: DailyVixSeries,
+  weeklyReference: Asset,
+): Asset {
+  return {
+    ...createCustomAssetFromPrices(input, parseDailyPriceCsv(input.priceCsv), dailyVix, weeklyReference),
+    customDataSource: 'Manual CSV',
+  }
 }
