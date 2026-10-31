@@ -207,8 +207,10 @@ export default function About() {
         <p className="text-sm text-muted-foreground">
           Prices retain each security&apos;s quote currency. London-listed instruments quoted in pence are
           normalised to pounds so values and currency labels stay consistent. The app runs 100% client-side
-          with no backend or API keys. You can download a Yahoo CSV and import it into this browser, or
-          repository contributors can run the Yahoo workflow to publish an asset for everyone.
+          with no backend or API keys. You can download a Yahoo CSV directly in the dashboard, import a
+          different CSV into this browser, or have repository contributors run the Yahoo workflow to publish
+          an asset for everyone. The optional download uses Jina AI Reader as a read-only relay because Yahoo
+          blocks direct browser requests; only the Yahoo symbol and date range are sent.
         </p>
       </section>
 

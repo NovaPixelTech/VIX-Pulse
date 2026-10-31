@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3, ExternalLink } from 'lucide-react'
+import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3, ExternalLink, Download } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearch } from '@/lib/utils'
@@ -9,10 +9,34 @@ import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
 import { createCustomAssetFromCsv, parseDailyPriceCsv } from '@/lib/customAssets'
+import { fetchYahooDailyCsv, type YahooCsvResult } from '@/lib/yahooCsv'
 
 type SortKey = 'meanChange' | 'maxChange' | 'meanDays' | 'meanVix'
 
 const PUBLISH_WORKFLOW_URL = 'https://github.com/NovaPixelTech/VIX-Pulse/actions/workflows/deploy.yml'
+
+function dateYearsAgo(years: number): string {
+  const date = new Date()
+  date.setUTCFullYear(date.getUTCFullYear() - years)
+  return date.toISOString().slice(0, 10)
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function saveCsvFile(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
 
 function SortHeader({
   label,
@@ -88,6 +112,10 @@ export default function Dashboard() {
   const [addError, setAddError] = useState<string | null>(null)
   const [addSuccess, setAddSuccess] = useState<string | null>(null)
   const [csvFileInfo, setCsvFileInfo] = useState<string | null>(null)
+  const [downloadStart, setDownloadStart] = useState(() => dateYearsAgo(6))
+  const [downloadEnd, setDownloadEnd] = useState(() => todayIso())
+  const [downloading, setDownloading] = useState(false)
+  const [downloadedCsv, setDownloadedCsv] = useState<YahooCsvResult | null>(null)
   const [addForm, setAddForm] = useState({
     ticker: '',
     name: '',
@@ -113,6 +141,36 @@ export default function Dashboard() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  const handleYahooDownload = async () => {
+    if (downloading) return
+    if (!addForm.ticker.trim()) {
+      setAddError('Enter a Yahoo Finance symbol first.')
+      return
+    }
+    setDownloading(true)
+    setAddError(null)
+    setAddSuccess(null)
+    try {
+      const result = await fetchYahooDailyCsv(addForm.ticker, downloadStart, downloadEnd)
+      saveCsvFile(result.csv, result.filename)
+      setDownloadedCsv(result)
+      setAddForm((form) => ({
+        ...form,
+        ticker: result.symbol,
+        name: form.name.trim() || result.name,
+        currency: result.currency,
+        exchange: result.exchange,
+        priceCsv: result.csv,
+        priceSource: 'Yahoo Finance CSV',
+      }))
+      setCsvFileInfo(null)
+    } catch (cause) {
+      setAddError(cause instanceof Error ? cause.message : 'Could not download Yahoo data.')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -285,28 +343,75 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-sm font-semibold">Step 1 · Download the daily CSV from Yahoo</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Enter the Yahoo symbol above, open its history page, choose a date range and Daily
-                  frequency, then use Yahoo&apos;s Download button. Yahoo may ask you to sign in.
+                  Enter the Yahoo symbol above, choose the history range, then download the CSV directly from
+                  the dashboard.
                 </p>
               </div>
-              {addForm.ticker.trim() ? (
-                <a
-                  href={`https://finance.yahoo.com/quote/${encodeURIComponent(addForm.ticker.trim())}/history/`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="text-xs text-muted-foreground">
+                  Start date
+                  <input
+                    type="date"
+                    value={downloadStart}
+                    onChange={(event) => setDownloadStart(event.target.value)}
+                    aria-label="Yahoo history start date"
+                    className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </label>
+                <label className="text-xs text-muted-foreground">
+                  End date
+                  <input
+                    type="date"
+                    value={downloadEnd}
+                    onChange={(event) => setDownloadEnd(event.target.value)}
+                    aria-label="Yahoo history end date"
+                    className="mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleYahooDownload()}
+                  disabled={downloading || !addForm.ticker.trim()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Open {addForm.ticker.trim()} history on Yahoo Finance
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                </a>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Enter a Yahoo symbol above to open its history page.
-                </p>
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  {downloading ? 'Downloading from Yahoo…' : 'Download Yahoo CSV'}
+                </button>
+                {addForm.ticker.trim() && (
+                  <a
+                    href={`https://finance.yahoo.com/quote/${encodeURIComponent(addForm.ticker.trim())}/history/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent"
+                  >
+                    Yahoo history page
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                )}
+              </div>
+              {downloadedCsv && (
+                <div className="rounded-lg border border-success/40 bg-success/10 p-3" role="status">
+                  <p className="text-xs text-success">
+                    Downloaded {downloadedCsv.filename} · {downloadedCsv.rowCount.toLocaleString()} daily
+                    prices · {downloadedCsv.firstDate} to {downloadedCsv.lastDate}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => saveCsvFile(downloadedCsv.csv, downloadedCsv.filename)}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded border border-success/40 px-2 py-1 text-xs text-success hover:bg-success/10"
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                    Save CSV again
+                  </button>
+                </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Yahoo blocks direct data requests from this static website. This button opens Yahoo itself; it
-                does not send your ticker or data to a VIX Pulse server.
+                Yahoo blocks direct browser requests, so downloads go through a read-only public relay (Jina
+                AI Reader). Only the Yahoo symbol and date range are sent; the CSV is generated in this
+                browser and is not sent to VIX Pulse. If the relay is unavailable, use the Yahoo history page
+                and upload the file below.
               </p>
             </section>
 
@@ -329,7 +434,7 @@ export default function Dashboard() {
                 <option value="Other CSV">Other CSV</option>
               </select>
               <label htmlFor="custom-asset-file" className="mb-1 block text-xs text-muted-foreground">
-                Step 2 · Upload the downloaded CSV (Date and Adj Close/Close columns)
+                Step 2 · Upload a different CSV, or use the prices downloaded above
               </label>
               <input
                 type="file"
@@ -343,6 +448,7 @@ export default function Dashboard() {
                   try {
                     const priceCsv = await file.text()
                     setAddForm((form) => ({ ...form, priceCsv }))
+                    setDownloadedCsv(null)
                     setAddSuccess(null)
                     const prices = parseDailyPriceCsv(priceCsv)
                     setCsvFileInfo(
@@ -351,6 +457,7 @@ export default function Dashboard() {
                     setAddError(null)
                   } catch (cause) {
                     setCsvFileInfo(null)
+                    setDownloadedCsv(null)
                     setAddError(cause instanceof Error ? cause.message : 'Could not read that CSV file.')
                   } finally {
                     input.value = ''
@@ -369,6 +476,7 @@ export default function Dashboard() {
                 onChange={(e) => {
                   setAddForm((f) => ({ ...f, priceCsv: e.target.value }))
                   setCsvFileInfo(null)
+                  setDownloadedCsv(null)
                   setAddError(null)
                   setAddSuccess(null)
                 }}
@@ -424,6 +532,7 @@ export default function Dashboard() {
                       priceSource: 'Yahoo Finance CSV',
                     })
                     setCsvFileInfo(null)
+                    setDownloadedCsv(null)
                     setAddSuccess(`${asset.ticker} was added to analysis and saved in this browser.`)
                   } catch (cause) {
                     setAddError(cause instanceof Error ? cause.message : 'Failed to add asset.')
@@ -431,13 +540,14 @@ export default function Dashboard() {
                 }}
                 className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm"
               >
-                Upload and add asset
+                Add asset to analysis
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
               The importer prefers Yahoo&apos;s Adj Close column, aligns prices to the shared VIX calendar,
-              and uses the same peak/recovery calculations as built-in assets. The uploaded history stays in
-              this browser and is not published or synced to other devices.
+              and uses the same peak/recovery calculations as built-in assets. Downloads also normalise London
+              pence prices to pounds. The downloaded or uploaded history stays in this browser and is not
+              published or synced to other devices.
             </p>
 
             <section
