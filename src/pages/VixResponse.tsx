@@ -553,7 +553,9 @@ export default function VixResponse() {
                         >
                           {formatPercent(item.stats.reboundPct.average)}
                         </td>
-                        <td className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.max ?? null)}`}>
+                        <td
+                          className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.max ?? null)}`}
+                        >
                           {formatPercent(item.stats.reboundPct.max)}
                         </td>
                         <td className="p-3 text-right font-mono">
