@@ -5,7 +5,14 @@ import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import { formatDate, formatNumber, formatPercent } from '@/lib/utils'
-import { loadThreshold, saveThreshold, loadDate, saveDate, formatDateInput } from '@/lib/settingsStorage'
+import {
+  loadThreshold,
+  saveThreshold,
+  loadDate,
+  saveDate,
+  formatDateInput,
+  formatDisplayDate,
+} from '@/lib/settingsStorage'
 import {
   rankVixResponses,
   VIX_RESPONSE_PEAK_THRESHOLD,
@@ -306,10 +313,10 @@ export default function VixResponse() {
           />
         </div>
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Analysis start date (YYYY-MM-DD or DD.MM.YYYY)</span>
+          <span className="font-medium">Analysis start date</span>
           <input
             type="text"
-            value={analysisFrom}
+            value={formatDisplayDate(analysisFrom)}
             onChange={(event) => {
               const parsed = formatDateInput(event.target.value)
               if (parsed) {
@@ -317,14 +324,27 @@ export default function VixResponse() {
                 saveDate('analysis-from', parsed)
               }
             }}
-            className="block w-full rounded-lg border border-border bg-background px-3 py-2"
+            placeholder="DD.MM.YYYY"
+            className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          />
+          <input
+            type="date"
+            value={analysisFrom}
+            onChange={(event) => {
+              const parsed = event.target.value
+              if (parsed) {
+                setAnalysisFrom(parsed)
+                saveDate('analysis-from', parsed)
+              }
+            }}
+            className="block w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
           />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Analysis end date (YYYY-MM-DD or DD.MM.YYYY)</span>
+          <span className="font-medium">Analysis end date</span>
           <input
             type="text"
-            value={analysisTo}
+            value={formatDisplayDate(analysisTo)}
             onChange={(event) => {
               const parsed = formatDateInput(event.target.value)
               if (parsed) {
@@ -332,7 +352,20 @@ export default function VixResponse() {
                 saveDate('analysis-to', parsed)
               }
             }}
-            className="block w-full rounded-lg border border-border bg-background px-3 py-2"
+            placeholder="DD.MM.YYYY"
+            className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          />
+          <input
+            type="date"
+            value={analysisTo}
+            onChange={(event) => {
+              const parsed = event.target.value
+              if (parsed) {
+                setAnalysisTo(parsed)
+                saveDate('analysis-to', parsed)
+              }
+            }}
+            className="block w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
           />
         </label>
       </section>
