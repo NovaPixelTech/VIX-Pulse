@@ -241,6 +241,7 @@ export interface RankedVixResponse extends AssetVixResponse {
   magnitudeScore: number
   componentScores: MagnitudeComponentScores
   vixCoMovement: VixCoMovement
+  bestIndex: number
 }
 
 type MovingAveragePeriod = 4 | 13
@@ -824,13 +825,37 @@ export function rankVixResponses(
     result.stats.absoluteReboundPct.average === null ? [] : [result.stats.absoluteReboundPct.average],
   )
 
+  const meanRebounds = results.flatMap((result) =>
+    result.stats.reboundPct.average === null ? [] : [result.stats.reboundPct.average],
+  )
+  const maxRebounds = results.flatMap((result) =>
+    result.stats.reboundPct.max === null ? [] : [result.stats.reboundPct.max],
+  )
+  const positiveRates = results.flatMap((result) =>
+    result.positiveRecoveryRatePct === null ? [] : [result.positiveRecoveryRatePct],
+  )
+  const avgCycleReturns = results.flatMap((result) =>
+    result.stats.cycleReturnPct.average === null ? [] : [result.stats.cycleReturnPct.average],
+  )
+  const daysBaseline = results.flatMap((result) =>
+    result.stats.daysToBaselineRecovery.average === null ? [] : [result.stats.daysToBaselineRecovery.average],
+  )
+
   return results
     .map((result) => {
       const componentScores: MagnitudeComponentScores = {
         absolutePriceMove: percentileScore(result.stats.absoluteReboundPct.average, absoluteMoves, true) ?? 0,
       }
       const magnitudeScore = componentScores.absolutePriceMove
-      return { ...result, componentScores, magnitudeScore }
+      const bestComponents = [
+        percentileScore(result.stats.reboundPct.average, meanRebounds, true) ?? 0,
+        percentileScore(result.stats.reboundPct.max, maxRebounds, true) ?? 0,
+        percentileScore(result.positiveRecoveryRatePct, positiveRates, true) ?? 0,
+        percentileScore(result.stats.cycleReturnPct.average, avgCycleReturns, true) ?? 0,
+        percentileScore(result.stats.daysToBaselineRecovery.average, daysBaseline, false) ?? 0,
+      ]
+      const bestIndex = bestComponents.reduce((sum, score) => sum + score, 0) / bestComponents.length
+      return { ...result, componentScores, magnitudeScore, bestIndex }
     })
     .sort(
       (left, right) =>

@@ -33,6 +33,7 @@ type SortKey =
   | 'cycleReturn'
   | 'baselineRecoveryDays'
   | 'cycleCount'
+  | 'bestIndex'
 
 function SortHeader({
   label,
@@ -93,6 +94,8 @@ function metricValue(item: RankedVixResponse, key: SortKey): number | null {
       return item.stats.daysToBaselineRecovery.average
     case 'cycleCount':
       return item.cycleCount
+    case 'bestIndex':
+      return item.bestIndex
   }
 }
 
@@ -575,6 +578,13 @@ export default function VixResponse() {
                         onSort={toggleSort}
                       />
                       <SortHeader
+                        label="Best index overall"
+                        column="bestIndex"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
                         label="Positive rebounds"
                         column="recoveryRate"
                         sortKey={sortKey}
@@ -664,6 +674,11 @@ export default function VixResponse() {
                           className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.max ?? null)}`}
                         >
                           {formatPercent(item.stats.reboundPct.max)}
+                        </td>
+                        <td
+                          className={`p-3 text-right font-mono font-semibold ${item.bestIndex >= 50 ? 'text-success' : 'text-muted-foreground'}`}
+                        >
+                          {formatNumber(item.bestIndex, 1)}
                         </td>
                         <td className="p-3 text-right font-mono">
                           {formatRate(item.positiveRecoveryRatePct, 1)}
@@ -759,6 +774,14 @@ export default function VixResponse() {
                       <p className="text-muted-foreground">Avg cycle P/L</p>
                       <p className={`font-mono ${returnClass(item.stats.cycleReturnPct.average)}`}>
                         {formatPercent(item.stats.cycleReturnPct.average)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Best index overall</p>
+                      <p
+                        className={`font-mono font-semibold ${item.bestIndex >= 50 ? 'text-success' : 'text-muted-foreground'}`}
+                      >
+                        {formatNumber(item.bestIndex, 1)}
                       </p>
                     </div>
                   </div>

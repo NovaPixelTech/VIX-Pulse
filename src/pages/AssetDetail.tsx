@@ -118,6 +118,8 @@ export default function AssetDetail() {
   const magnitudeRank = magnitudeRanking.findIndex((item) => item.asset.isin === asset?.isin) + 1
   const currentCoMovement = crossAssetRankings.find((item) => item.asset.isin === asset?.isin)?.vixCoMovement
   const correlationRank = correlationRanking.findIndex((item) => item.asset.isin === asset?.isin) + 1
+  const currentBestIndex =
+    crossAssetRankings.find((item) => item.asset.isin === asset?.isin)?.bestIndex ?? null
   const safeResponse = asset ? response : null
   const analysisPeaks = useMemo(
     () =>
@@ -652,6 +654,14 @@ export default function AssetDetail() {
             className={`text-2xl font-bold font-mono ${(safeResponse.stats.reboundPct.max ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}
           >
             {formatPercent(safeResponse.stats.reboundPct.max)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 card-glow">
+          <p className="text-sm text-muted-foreground">Best index overall</p>
+          <p
+            className={`text-2xl font-bold font-mono ${(currentBestIndex ?? 0) >= 50 ? 'text-success' : 'text-muted-foreground'}`}
+          >
+            {currentBestIndex !== null ? formatNumber(currentBestIndex, 1) : '—'}
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4 card-glow">
