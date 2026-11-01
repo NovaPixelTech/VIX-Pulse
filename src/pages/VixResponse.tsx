@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Search, TrendingDown, TrendingUp } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import { formatDate, formatNumber, formatPercent } from '@/lib/utils'
+import { loadThreshold, saveThreshold, loadDate, saveDate, formatDateInput } from '@/lib/settingsStorage'
 import {
   rankVixResponses,
   VIX_RESPONSE_PEAK_THRESHOLD,
@@ -122,12 +123,21 @@ export default function VixResponse() {
   const { data, loading, error } = useData()
   usePageTitle('VIX Response Ranking')
   const [search, setSearch] = useState('')
-  const [analysisFrom, setAnalysisFrom] = useState('2025-09-01')
-  const [analysisTo, setAnalysisTo] = useState('2026-09-14')
-  const [peakThreshold, setPeakThreshold] = useState(VIX_RESPONSE_PEAK_THRESHOLD)
-  const [recoveryThreshold, setRecoveryThreshold] = useState(VIX_RESPONSE_RECOVERY_THRESHOLD)
+  const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', '2025-09-01'))
+  const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
+  const [peakThreshold, setPeakThreshold] = useState(() =>
+    loadThreshold('peak-threshold', VIX_RESPONSE_PEAK_THRESHOLD),
+  )
+  const [recoveryThreshold, setRecoveryThreshold] = useState(() =>
+    loadThreshold('recovery-threshold', VIX_RESPONSE_RECOVERY_THRESHOLD),
+  )
   const [sortKey, setSortKey] = useState<SortKey>('rebound')
   const [sortAsc, setSortAsc] = useState(false)
+
+  useEffect(() => saveThreshold('peak-threshold', peakThreshold), [peakThreshold])
+  useEffect(() => saveThreshold('recovery-threshold', recoveryThreshold), [recoveryThreshold])
+  useEffect(() => saveDate('analysis-from', analysisFrom), [analysisFrom])
+  useEffect(() => saveDate('analysis-to', analysisTo), [analysisTo])
 
   const ranked = useMemo(
     () =>
@@ -242,11 +252,20 @@ export default function VixResponse() {
 
       <section className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <label htmlFor="peak-threshold" className="font-medium">
               VIX peak threshold
             </label>
-            <span className="font-mono text-muted-foreground">{peakThreshold.toFixed(1)}</span>
+            <input
+              type="number"
+              value={peakThreshold}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                if (!isNaN(val)) setPeakThreshold(Math.max(15, Math.min(40, val)))
+              }}
+              step={0.5}
+              className="w-24 rounded border border-border bg-background px-2 py-1 text-sm font-mono text-right"
+            />
           </div>
           <input
             id="peak-threshold"
@@ -260,11 +279,20 @@ export default function VixResponse() {
           />
         </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <label htmlFor="recovery-threshold" className="font-medium">
               VIX recovery threshold
             </label>
-            <span className="font-mono text-muted-foreground">{recoveryThreshold.toFixed(1)}</span>
+            <input
+              type="number"
+              value={recoveryThreshold}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                if (!isNaN(val)) setRecoveryThreshold(Math.max(12, Math.min(peakThreshold, val)))
+              }}
+              step={0.5}
+              className="w-24 rounded border border-border bg-background px-2 py-1 text-sm font-mono text-right"
+            />
           </div>
           <input
             id="recovery-threshold"
@@ -278,20 +306,32 @@ export default function VixResponse() {
           />
         </div>
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Analysis start date</span>
+          <span className="font-medium">Analysis start date (YYYY-MM-DD or DD.MM.YYYY)</span>
           <input
-            type="date"
+            type="text"
             value={analysisFrom}
-            onChange={(event) => setAnalysisFrom(event.target.value)}
+            onChange={(event) => {
+              const parsed = formatDateInput(event.target.value)
+              if (parsed) {
+                setAnalysisFrom(parsed)
+                saveDate('analysis-from', parsed)
+              }
+            }}
             className="block w-full rounded-lg border border-border bg-background px-3 py-2"
           />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Analysis end date</span>
+          <span className="font-medium">Analysis end date (YYYY-MM-DD or DD.MM.YYYY)</span>
           <input
-            type="date"
+            type="text"
             value={analysisTo}
-            onChange={(event) => setAnalysisTo(event.target.value)}
+            onChange={(event) => {
+              const parsed = formatDateInput(event.target.value)
+              if (parsed) {
+                setAnalysisTo(parsed)
+                saveDate('analysis-to', parsed)
+              }
+            }}
             className="block w-full rounded-lg border border-border bg-background px-3 py-2"
           />
         </label>
