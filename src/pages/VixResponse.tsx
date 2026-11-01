@@ -124,19 +124,18 @@ export default function VixResponse() {
   const [search, setSearch] = useState('')
   const [analysisFrom, setAnalysisFrom] = useState('2025-09-01')
   const [analysisTo, setAnalysisTo] = useState('2026-09-14')
+  const [peakThreshold, setPeakThreshold] = useState(VIX_RESPONSE_PEAK_THRESHOLD)
+  const [recoveryThreshold, setRecoveryThreshold] = useState(VIX_RESPONSE_RECOVERY_THRESHOLD)
   const [sortKey, setSortKey] = useState<SortKey>('rebound')
   const [sortAsc, setSortAsc] = useState(false)
 
   const ranked = useMemo(
     () =>
-      rankVixResponses(
-        data?.assets ?? [],
-        VIX_RESPONSE_PEAK_THRESHOLD,
-        VIX_RESPONSE_RECOVERY_THRESHOLD,
-        data?.dailyVix,
-        { from: analysisFrom || undefined, to: analysisTo || undefined },
-      ),
-    [data, analysisFrom, analysisTo],
+      rankVixResponses(data?.assets ?? [], peakThreshold, recoveryThreshold, data?.dailyVix, {
+        from: analysisFrom || undefined,
+        to: analysisTo || undefined,
+      }),
+    [data, analysisFrom, analysisTo, peakThreshold, recoveryThreshold],
   )
   const query = search.trim().toLowerCase()
   const searched = query
@@ -228,10 +227,9 @@ export default function VixResponse() {
         </div>
         <p className="max-w-4xl text-muted-foreground">
           Compare asset price changes after every daily VIX local high strictly above{' '}
-          {VIX_RESPONSE_PEAK_THRESHOLD}, through the first daily VIX close below{' '}
-          {VIX_RESPONSE_RECOVERY_THRESHOLD}. The default table order is descending signed average
-          peak-to-recovery return, matching the supplied comparison. Average absolute price movement is shown
-          separately and is not a performance ranking.
+          {peakThreshold.toFixed(1)}, through the first daily VIX close below {recoveryThreshold.toFixed(1)}.
+          The default table order is descending signed average peak-to-recovery return, matching the supplied
+          comparison. Average absolute price movement is shown separately and is not a performance ranking.
         </p>
         <p className="text-sm text-muted-foreground">
           Report window {formatDate(analysisFrom)} – {formatDate(analysisTo)} · {distinctCycles} recovery
@@ -242,7 +240,43 @@ export default function VixResponse() {
         </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label htmlFor="peak-threshold" className="font-medium">
+              VIX peak threshold
+            </label>
+            <span className="font-mono text-muted-foreground">{peakThreshold.toFixed(1)}</span>
+          </div>
+          <input
+            id="peak-threshold"
+            type="range"
+            min={15}
+            max={40}
+            step={0.5}
+            value={peakThreshold}
+            onChange={(e) => setPeakThreshold(Number(e.target.value))}
+            className="w-full"
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label htmlFor="recovery-threshold" className="font-medium">
+              VIX recovery threshold
+            </label>
+            <span className="font-mono text-muted-foreground">{recoveryThreshold.toFixed(1)}</span>
+          </div>
+          <input
+            id="recovery-threshold"
+            type="range"
+            min={12}
+            max={peakThreshold}
+            step={0.5}
+            value={Math.min(recoveryThreshold, peakThreshold)}
+            onChange={(e) => setRecoveryThreshold(Number(e.target.value))}
+            className="w-full"
+          />
+        </div>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Analysis start date</span>
           <input
@@ -667,8 +701,8 @@ export default function VixResponse() {
       </section>
 
       <p className="text-xs text-muted-foreground">
-        VIX peaks use daily highs and are strict local maxima above {VIX_RESPONSE_PEAK_THRESHOLD}; recovery is
-        the first daily VIX close below {VIX_RESPONSE_RECOVERY_THRESHOLD}. Asset peak/recovery prices use the
+        VIX peaks use daily highs and are strict local maxima above {peakThreshold.toFixed(1)}; recovery is
+        the first daily VIX close below {recoveryThreshold.toFixed(1)}. Asset peak/recovery prices use the
         latest available asset close on or before the respective VIX date. Baselines, moving averages, and
         time-to-baseline recovery remain weekly estimates. This is historical analysis, not investment advice.
       </p>
