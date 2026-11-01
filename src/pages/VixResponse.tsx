@@ -19,6 +19,8 @@ type SortKey =
   | 'vixSlope'
   | 'drawdown'
   | 'rebound'
+  | 'meanRebound'
+  | 'maxRebound'
   | 'recoveryRate'
   | 'cycleReturn'
   | 'baselineRecoveryDays'
@@ -71,6 +73,10 @@ function metricValue(item: RankedVixResponse, key: SortKey): number | null {
       return item.stats.drawdownPct.average
     case 'rebound':
       return item.stats.reboundPct.average
+    case 'meanRebound':
+      return item.stats.reboundPct.average
+    case 'maxRebound':
+      return item.stats.reboundPct.max
     case 'recoveryRate':
       return item.positiveRecoveryRatePct
     case 'cycleReturn':
@@ -448,6 +454,20 @@ export default function VixResponse() {
                         onSort={toggleSort}
                       />
                       <SortHeader
+                        label="Mean peak-to-recovery change"
+                        column="meanRebound"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
+                        label="Max peak-to-recovery change"
+                        column="maxRebound"
+                        sortKey={sortKey}
+                        sortAsc={sortAsc}
+                        onSort={toggleSort}
+                      />
+                      <SortHeader
                         label="Positive rebounds"
                         column="recoveryRate"
                         sortKey={sortKey}
@@ -528,6 +548,14 @@ export default function VixResponse() {
                         >
                           {formatPercent(item.stats.reboundPct.average)}
                         </td>
+                        <td
+                          className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.average)}`}
+                        >
+                          {formatPercent(item.stats.reboundPct.average)}
+                        </td>
+                        <td className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.max ?? null)}`}>
+                          {formatPercent(item.stats.reboundPct.max)}
+                        </td>
                         <td className="p-3 text-right font-mono">
                           {formatRate(item.positiveRecoveryRatePct, 1)}
                         </td>
@@ -600,6 +628,18 @@ export default function VixResponse() {
                       <p className="text-muted-foreground">Avg rebound</p>
                       <p className={`font-mono ${returnClass(item.stats.reboundPct.average)}`}>
                         {formatPercent(item.stats.reboundPct.average)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Mean peak-to-recovery change</p>
+                      <p className={`font-mono ${returnClass(item.stats.reboundPct.average)}`}>
+                        {formatPercent(item.stats.reboundPct.average)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Max peak-to-recovery change</p>
+                      <p className={`font-mono ${returnClass(item.stats.reboundPct.max ?? null)}`}>
+                        {formatPercent(item.stats.reboundPct.max)}
                       </p>
                     </div>
                     <div>
