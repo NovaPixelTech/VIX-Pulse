@@ -497,6 +497,7 @@ export default function VixResponse() {
               aria-label="Search VIX response ranking"
               placeholder="Search by ticker, name, or ISIN"
               className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary"
+              style={{ textTransform: 'uppercase' }}
             />
           </div>
         </div>
