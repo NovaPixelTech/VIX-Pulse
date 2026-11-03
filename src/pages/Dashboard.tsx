@@ -260,10 +260,11 @@ export default function Dashboard() {
             id="search-input"
             type="text"
             placeholder="Search by ISIN, ticker, or name... (press /)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={search.toUpperCase()}
+            onChange={(e) => setSearch(e.target.value.toUpperCase())}
             aria-label="Search assets by ISIN, ticker, or name"
-            className="w-full rounded-xl border border-border bg-card py-3 pl-10 pr-4 transition-all focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-xl border border-border bg-card py-3 pl-10 pr-4 uppercase transition-all focus:outline-none focus:ring-2 focus:ring-primary"
+            style={{ textTransform: 'uppercase' }}
           />
           {search && (
             <button

@@ -262,10 +262,11 @@ export default function Compare() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={query.toUpperCase()}
+              onChange={(event) => setQuery(event.target.value.toUpperCase())}
               placeholder="Search assets to add..."
-              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary"
+              style={{ textTransform: 'uppercase' }}
               aria-label="Search assets to add to comparison"
             />
           </div>
