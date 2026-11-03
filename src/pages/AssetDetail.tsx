@@ -61,6 +61,7 @@ export default function AssetDetail() {
   )
   const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', '2025-09-01'))
   const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
+  const [showMovingAverages, setShowMovingAverages] = useState(false)
   const dateRange = { from: analysisFrom || undefined, to: analysisTo || undefined }
 
   useEffect(() => saveThreshold('peak-threshold', peakThreshold), [peakThreshold])
@@ -250,7 +251,12 @@ export default function AssetDetail() {
     },
     legend: {
       type: 'scroll',
-      data: ['VIX', asset.ticker, '4W MA', '13W MA', `VIX >${peakThreshold.toFixed(1)} peaks`],
+      data: [
+        'VIX',
+        asset.ticker,
+        ...(showMovingAverages ? ['4W MA', '13W MA'] : []),
+        `VIX >${peakThreshold.toFixed(1)} peaks`,
+      ],
       left: 0,
       right: 0,
       textStyle: { color: chart.text },
@@ -403,7 +409,7 @@ export default function AssetDetail() {
         name: '4W MA',
         type: 'line',
         yAxisIndex: 1,
-        data: fourWeekMovingAverage,
+        data: showMovingAverages ? fourWeekMovingAverage : [],
         showSymbol: false,
         connectNulls: false,
         lineStyle: { color: theme === 'dark' ? '#fbbf24' : '#b45309', width: 1.5, type: 'dashed' },
@@ -413,7 +419,7 @@ export default function AssetDetail() {
         name: '13W MA',
         type: 'line',
         yAxisIndex: 1,
-        data: thirteenWeekMovingAverage,
+        data: showMovingAverages ? thirteenWeekMovingAverage : [],
         showSymbol: false,
         connectNulls: false,
         lineStyle: { color: theme === 'dark' ? '#c4b5fd' : '#6d28d9', width: 1.5, type: 'dashed' },
@@ -699,8 +705,17 @@ export default function AssetDetail() {
         </span>
         <span>
           Each peak marker&apos;s tooltip gives that event&apos;s return; arrows show one representative peak
-          per recovery window. Dashed lines show 4W and 13W averages.
+          per recovery window.
         </span>
+        <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-medium text-foreground">
+          <input
+            type="checkbox"
+            checked={showMovingAverages}
+            onChange={(e) => setShowMovingAverages(e.target.checked)}
+            className="h-4 w-4 rounded border-border bg-background"
+          />
+          Show 4W and 13W moving averages
+        </label>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">

@@ -157,10 +157,10 @@ export default function VixResponse() {
       }),
     [data, analysisFrom, analysisTo, peakThreshold, recoveryThreshold],
   )
-  const query = search.trim().toLowerCase()
+  const query = search.trim().toUpperCase()
   const searched = query
     ? ranked.filter(({ asset }) =>
-        [asset.ticker, asset.name, asset.isin].some((value) => value.toLowerCase().includes(query)),
+        [asset.ticker, asset.name, asset.isin].some((value) => value.toUpperCase().includes(query)),
       )
     : ranked
   const sorted = [...searched].sort((a, b) => compareResponses(a, b, sortKey, sortAsc))
@@ -492,11 +492,11 @@ export default function VixResponse() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              value={search.toUpperCase()}
+              onChange={(event) => setSearch(event.target.value.toUpperCase())}
               aria-label="Search VIX response ranking"
               placeholder="Search by ticker, name, or ISIN"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
         </div>
