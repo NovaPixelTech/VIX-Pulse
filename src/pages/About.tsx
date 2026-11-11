@@ -212,6 +212,13 @@ export default function About() {
           an asset for everyone. The optional download uses Jina AI Reader as a read-only relay because Yahoo
           blocks direct browser requests; only the Yahoo symbol and date range are sent.
         </p>
+        <p className="text-sm text-muted-foreground">
+          The dashboard&apos;s live VIX banner polls the same relay about once a minute for the current{' '}
+          <code className="px-1 py-0.5 bg-muted rounded">^VIX</code> quote, showing the level with its regime
+          colour, an intraday sparkline, and a 10–40 gauge. The live value can lag the exchange by a few
+          minutes; when the relay is unreachable the banner falls back to the latest published snapshot, and
+          the quote cards below it always show published data with observation dates.
+        </p>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-6 card-glow space-y-4">

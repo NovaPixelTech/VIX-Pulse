@@ -4,6 +4,7 @@ A client-side dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved a
 
 ## Features
 
+- **Live VIX banner**: A large regime-coloured live VIX value at the top of the dashboard, refreshed about once a minute from Yahoo Finance with an intraday sparkline, a 10–40 level gauge, day change, and market status; it falls back to the published snapshot when the live relay is unreachable.
 - **Dashboard**: Global ranking of all published assets, search, sortable metrics, latest available daily asset quotes, weekly closes, and a prominent current/last-week VIX overview.
 - **Asset Detail**: Latest asset quote and daily move plus an aligned daily VIX/price chart when available, grouped green/red VIX recovery periods, rebound arrows, moving averages, and per-peak response metrics.
 - **VIX Response**: Searchable, sortable ranking for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
@@ -86,9 +87,9 @@ The workflow in `.github/workflows/deploy.yml` builds on every push to `main`, r
 
 ```text
 src/
-  components/     Layout, skeletons, VIX overview, response metrics
-  hooks/          static-data loader and theme provider
-  lib/            calculations, VIX response analytics, navigation, formatting, tests
+  components/     Layout, skeletons, live VIX banner, VIX overview, response metrics
+  hooks/          static-data loader, live VIX poller, theme provider
+  lib/            calculations, VIX response analytics, live quote fetching, navigation, formatting, tests
   pages/          Dashboard, Asset Detail, Compare, VIX Response, About
 public/data/      generated static dataset
 scripts/          Yahoo data pipeline, public custom-asset catalog, and offline generators
@@ -105,6 +106,7 @@ scripts/          Yahoo data pipeline, public custom-asset catalog, and offline 
 - Local custom assets align dated closes to the shared VIX calendar and use the same event calculations. Download Yahoo Finance daily CSVs in the dashboard or upload them with `Date` and `Adj Close`/`Close` columns; the importer prefers adjusted close, and dashboard downloads normalise London pence prices to pounds. The local asset and its dated history are stored in this browser only. Yahoo requests cannot be made directly from the static site because of browser CORS restrictions, so the dashboard download uses Jina AI Reader as a read-only relay. To add an asset to the shared public catalog without a provider key, run the repository's GitHub Actions workflow; it downloads with `yfinance` and commits the generated snapshot. That shared path requires repository write access.
 - Daily VIX co-movement is Pearson correlation between asset close-to-close percentage returns and VIX close point changes; a regression slope (% asset return per VIX point) is also shown. Only adjacent common sessions with real asset closes are used. Forward-filled holidays are excluded. These estimates are descriptive, not causal.
 - Current VIX and asset quote cards use the latest quote included in the generated snapshot and display its date. Weekly chart history remains aligned to completed Friday closes.
+- The dashboard's live VIX banner polls the Yahoo Finance `^VIX` chart endpoint about once a minute through the same Jina AI Reader relay used by the browser CSV download (read-only; only the `^VIX` symbol is sent, with no API key). Polling pauses while the tab is hidden. The live quote can lag the exchange by a few minutes, the banner shows its quote time in the exchange time zone, and it falls back to the published snapshot when the relay is unreachable. Market status is derived from the reported session end plus a recently updating quote, because Yahoo does not publish a market flag for the index chart.
 - Baselines, moving averages, and time to regain baseline are weekly-close estimates; peak-to-recovery returns use daily closes.
 - 4-week and 13-week moving averages, and time to regain the baseline, are calculated from weekly closes; those timings are weekly estimates rather than daily asset observations.
 - Values remain in each security's quote currency. London-listed pence quotes are divided by 100 and labelled GBP.

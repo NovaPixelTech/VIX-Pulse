@@ -2,7 +2,7 @@ const YAHOO_CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart'
 const YAHOO_READER_PROXY = 'https://r.jina.ai/http://'
 const YAHOO_SYMBOL_PATTERN = /^[A-Za-z0-9.^=_-]{1,40}$/
 
-type YahooChartMeta = {
+export type YahooChartMeta = {
   currency?: string
   symbol?: string
   exchangeName?: string
@@ -31,7 +31,7 @@ type YahooChartResult = {
   }
 }
 
-type YahooChartPayload = {
+export type YahooChartPayload = {
   chart?: {
     result?: YahooChartResult[]
     error?: { code?: string; description?: string } | null
@@ -70,6 +70,10 @@ export function normalizeYahooSymbol(symbol: string): string {
   return value
 }
 
+export function buildReaderUrl(target: string): string {
+  return `${YAHOO_READER_PROXY}${target.slice('https://'.length).replace(/%/g, '%25').replace(/&/g, '%26')}`
+}
+
 export function buildYahooChartReaderUrl(symbol: string, startDate: string, endDate: string): string {
   const cleanSymbol = normalizeYahooSymbol(symbol)
   const start = Math.floor(normalizeDate(startDate, 'Start date') / 1000)
@@ -79,10 +83,10 @@ export function buildYahooChartReaderUrl(symbol: string, startDate: string, endD
   }
 
   const target = `${YAHOO_CHART_BASE}/${encodeURIComponent(cleanSymbol)}?period1=${start}&period2=${end}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`
-  return `${YAHOO_READER_PROXY}${target.slice('https://'.length).replace(/%/g, '%25').replace(/&/g, '%26')}`
+  return buildReaderUrl(target)
 }
 
-function parseYahooChartPayload(text: string): YahooChartPayload {
+export function parseYahooChartPayload(text: string): YahooChartPayload {
   const marker = text.indexOf('Markdown Content:')
   const jsonStart = text.indexOf('{', marker >= 0 ? marker + 'Markdown Content:'.length : 0)
   const jsonEnd = text.lastIndexOf('}')
@@ -111,7 +115,7 @@ function parseYahooChartPayload(text: string): YahooChartPayload {
   return parsed
 }
 
-function finiteNumber(value: unknown): number | null {
+export function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 

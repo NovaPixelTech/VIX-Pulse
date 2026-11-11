@@ -11,6 +11,8 @@ export interface VixRegime {
   bgClass: string
   borderClass: string
   dotClass: string
+  /** Raw hex used where Tailwind classes cannot reach, such as SVG strokes and CSS glows. */
+  hex: string
 }
 
 const REGIMES: Record<VixRegimeKey, VixRegime> = {
@@ -23,6 +25,7 @@ const REGIMES: Record<VixRegimeKey, VixRegime> = {
     bgClass: 'bg-sky-500/10',
     borderClass: 'border-sky-500/30',
     dotClass: 'bg-sky-400',
+    hex: '#0ea5e9',
   },
   normal: {
     key: 'normal',
@@ -33,6 +36,7 @@ const REGIMES: Record<VixRegimeKey, VixRegime> = {
     bgClass: 'bg-emerald-500/10',
     borderClass: 'border-emerald-500/30',
     dotClass: 'bg-emerald-400',
+    hex: '#10b981',
   },
   elevated: {
     key: 'elevated',
@@ -43,6 +47,7 @@ const REGIMES: Record<VixRegimeKey, VixRegime> = {
     bgClass: 'bg-amber-500/10',
     borderClass: 'border-amber-500/30',
     dotClass: 'bg-amber-400',
+    hex: '#f59e0b',
   },
   high: {
     key: 'high',
@@ -53,6 +58,7 @@ const REGIMES: Record<VixRegimeKey, VixRegime> = {
     bgClass: 'bg-red-500/10',
     borderClass: 'border-red-500/30',
     dotClass: 'bg-red-400',
+    hex: '#ef4444',
   },
 }
 

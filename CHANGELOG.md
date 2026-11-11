@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0 - 2026-11-11
+
+### Added
+
+- Live VIX banner at the top of the dashboard: a large regime-coloured current VIX value with a pulsing live indicator, day change versus the previous close, an intraday 5-minute sparkline, a 10–40 level gauge with regime zones, market status, quote time in the exchange time zone, and an updated-seconds-ago counter.
+- Live quote polling about once a minute through the existing Jina AI Reader relay, paused while the tab is hidden, with an immediate catch-up fetch on return; a manual refresh button is included in the banner.
+- Graceful fallback to the published snapshot when the live relay is unreachable, with retry behaviour and stale-quote notes.
+- Unit tests for live quote parsing, market-state derivation, and the banner's rendered states.
+
+### Changed
+
+- VIX regimes now carry a raw hex colour used by SVG sparkline strokes, gauge markers, and banner glows.
+
 ## v0.3.1 - 2026-10-27
 
 ### Added

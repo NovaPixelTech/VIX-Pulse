@@ -6,6 +6,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearch } from '@/lib/utils'
 import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
+import RealtimeVixBanner from '@/components/RealtimeVixBanner'
 import VixOverview from '@/components/VixOverview'
 import type { Asset } from '@/types'
 import { createCustomAssetFromCsv, parseDailyPriceCsv } from '@/lib/customAssets'
@@ -191,6 +192,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="space-y-8">
+        <Skeleton className="h-96 w-full rounded-3xl" />
         <div className="text-center space-y-4">
           <Skeleton className="h-12 w-64 mx-auto" />
           <Skeleton className="h-6 w-96 mx-auto" />
@@ -245,7 +247,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="text-center space-y-4 py-8">
+      <RealtimeVixBanner data={data} />
+
+      <div className="text-center space-y-4 pb-8">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
           <span className="text-gradient">VIX</span> Pulse
         </h1>
