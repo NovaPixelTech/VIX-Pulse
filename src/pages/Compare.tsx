@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { Search, X } from 'lucide-react'
+import ChartMagnifySlider from '@/components/ChartMagnifySlider'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useTheme } from '@/hooks/useTheme'
+import { getMagnifiedAxisRange, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { formatCurrency, formatDate, formatPercent, formatNumber, getChartTheme } from '@/lib/utils'
 import { deriveVixMetrics, getVixRegime, getWeeklyStats } from '@/lib/vix'
 
@@ -41,6 +43,9 @@ export default function Compare() {
   usePageTitle('Compare assets')
   const [selected, setSelected] = useState<string[]>(DEFAULT_SELECTION)
   const [query, setQuery] = useState('')
+  const [magnification, setMagnification] = useState(loadChartMagnification)
+
+  useEffect(() => saveChartMagnification(magnification), [magnification])
 
   const filteredAssets = useMemo(() => {
     if (!data) return []
@@ -71,6 +76,20 @@ export default function Compare() {
   const regime = getVixRegime(vixMetrics?.currentVix)
   const chart = getChartTheme(theme)
   const assetColors = theme === 'dark' ? ASSET_COLORS : LIGHT_ASSET_COLORS
+  const normalizedSeries = selectedAssets.map((asset) => {
+    const firstPrice = asset.priceSeries.price.find((price) => price !== null) ?? null
+    return {
+      asset,
+      data: asset.priceSeries.price.map((price) =>
+        price !== null && firstPrice ? (price / firstPrice) * 100 : null,
+      ),
+    }
+  })
+  const indexedRange = getMagnifiedAxisRange(
+    normalizedSeries.flatMap((series) => series.data),
+    magnification,
+  )
+  const vixRange = getMagnifiedAxisRange(weeklyVix, magnification)
 
   const option = {
     backgroundColor: 'transparent',
@@ -125,6 +144,7 @@ export default function Compare() {
         axisLabel: { color: chart.muted },
         splitLine: { lineStyle: { color: chart.border } },
         scale: true,
+        ...indexedRange,
       },
       {
         type: 'value',
@@ -135,6 +155,7 @@ export default function Compare() {
         axisLabel: { color: VIX_COLOR },
         splitLine: { show: false },
         scale: true,
+        ...vixRange,
       },
     ],
     dataZoom: [
@@ -148,16 +169,12 @@ export default function Compare() {
       },
     ],
     series: [
-      ...selectedAssets.map((asset, idx) => {
-        const firstPrice = asset.priceSeries.price.find((price) => price !== null) ?? null
-        const normalized = asset.priceSeries.price.map((price) =>
-          price !== null && firstPrice ? (price / firstPrice) * 100 : null,
-        )
+      ...normalizedSeries.map(({ asset, data }, idx) => {
         return {
           name: asset.ticker,
           type: 'line',
           yAxisIndex: 0,
-          data: normalized,
+          data,
           smooth: true,
           showSymbol: false,
           lineStyle: { color: assetColors[idx], width: 2 },
@@ -311,12 +328,16 @@ export default function Compare() {
         </div>
       </div>
 
-      <div
-        className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow"
-        role="img"
-        aria-label={`Weekly comparison chart for ${selectedAssets.map((asset) => asset.ticker).join(', ') || 'no assets'} and VIX`}
-      >
-        <ReactECharts option={option} style={{ height: '520px' }} opts={{ renderer: 'svg' }} notMerge />
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow">
+        <div className="mb-4 border-b border-border pb-3">
+          <ChartMagnifySlider value={magnification} onChange={setMagnification} />
+        </div>
+        <div
+          role="img"
+          aria-label={`Weekly comparison chart for ${selectedAssets.map((asset) => asset.ticker).join(', ') || 'no assets'} and VIX`}
+        >
+          <ReactECharts option={option} style={{ height: '520px' }} opts={{ renderer: 'svg' }} notMerge />
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden card-glow">

@@ -25,7 +25,9 @@ import {
   VIX_RESPONSE_RECOVERY_THRESHOLD,
 } from '@/lib/vixResponse'
 import { Skeleton } from '@/components/Skeleton'
+import ChartMagnifySlider from '@/components/ChartMagnifySlider'
 import VixResponsePanel from '@/components/VixResponsePanel'
+import { getMagnifiedAxisRange, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import {
   loadThreshold,
   saveThreshold,
@@ -62,12 +64,14 @@ export default function AssetDetail() {
   const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', '2025-09-01'))
   const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
   const [showMovingAverages, setShowMovingAverages] = useState(false)
+  const [magnification, setMagnification] = useState(loadChartMagnification)
   const dateRange = { from: analysisFrom || undefined, to: analysisTo || undefined }
 
   useEffect(() => saveThreshold('peak-threshold', peakThreshold), [peakThreshold])
   useEffect(() => saveThreshold('recovery-threshold', recoveryThreshold), [recoveryThreshold])
   useEffect(() => saveDate('analysis-from', analysisFrom), [analysisFrom])
   useEffect(() => saveDate('analysis-to', analysisTo), [analysisTo])
+  useEffect(() => saveChartMagnification(magnification), [magnification])
   const hasDailyVix = Boolean(
     data?.dailyVix &&
     data.dailyVix.dates.length > 0 &&
@@ -224,6 +228,18 @@ export default function AssetDetail() {
   const recoveryPositiveColor = theme === 'dark' ? '#4ade80' : '#15803d'
   const recoveryNegativeColor = theme === 'dark' ? '#f87171' : '#b91c1c'
   const currentAssetNumber = assetIndex + 1
+  const vixAxisRange = getMagnifiedAxisRange(
+    [
+      ...chartVix,
+      ...annotationPoints.map(({ peak }) => peak.vixPeakValue),
+      ...highPeakPoints.map(({ peak }) => peak.vixPeakValue),
+    ],
+    magnification,
+  )
+  const priceAxisRange = getMagnifiedAxisRange(
+    [...chartPrices, ...(showMovingAverages ? [...fourWeekMovingAverage, ...thirteenWeekMovingAverage] : [])],
+    magnification,
+  )
 
   const goToAsset = (target: Asset) => {
     navigate(`/asset/${target.isin}`, {
@@ -294,6 +310,7 @@ export default function AssetDetail() {
         axisLabel: { color: vixColor },
         splitLine: { lineStyle: { color: chart.border } },
         scale: true,
+        ...vixAxisRange,
       },
       {
         type: 'value',
@@ -304,6 +321,7 @@ export default function AssetDetail() {
         axisLabel: { color: assetColor },
         splitLine: { show: false },
         scale: true,
+        ...priceAxisRange,
       },
     ],
     dataZoom: [
@@ -684,12 +702,16 @@ export default function AssetDetail() {
         </div>
       </div>
 
-      <div
-        className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow"
-        role="img"
-        aria-label={`${asset.ticker} ${hasDailyData ? 'daily' : 'weekly'} price and VIX chart with ${highPeakPoints.length} VIX peaks above ${peakThreshold}, ${safeResponse.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
-      >
-        <ReactECharts option={option} style={{ height: '480px' }} opts={{ renderer: 'svg' }} notMerge />
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow">
+        <div className="mb-4 border-b border-border pb-3">
+          <ChartMagnifySlider value={magnification} onChange={setMagnification} />
+        </div>
+        <div
+          role="img"
+          aria-label={`${asset.ticker} ${hasDailyData ? 'daily' : 'weekly'} price and VIX chart with ${highPeakPoints.length} VIX peaks above ${peakThreshold}, ${safeResponse.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
+        >
+          <ReactECharts option={option} style={{ height: '480px' }} opts={{ renderer: 'svg' }} notMerge />
+        </div>
       </div>
       <div
         className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground"
