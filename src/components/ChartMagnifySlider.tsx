@@ -29,8 +29,8 @@ export default function ChartMagnifySlider({
   const zoomFactor = magnificationToZoomFactor(normalized)
   const description =
     normalized === DEFAULT_MAGNIFICATION
-      ? 'Off · full vertical range'
-      : `${visiblePercent}% of vertical range · ${formatZoomFactor(zoomFactor)} zoom`
+      ? 'Off · full timeline'
+      : `Latest ${visiblePercent}% of timeline · ${formatZoomFactor(zoomFactor)} zoom`
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -64,13 +64,13 @@ export default function ChartMagnifySlider({
         onClick={() => onChange(DEFAULT_MAGNIFICATION)}
         disabled={normalized === DEFAULT_MAGNIFICATION}
         className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40"
-        title="Reset magnification to full range"
+        title="Reset magnification to the full timeline"
       >
         <RotateCcw className="h-3 w-3" aria-hidden="true" />
         Reset
       </button>
       <span className="text-[11px] text-muted-foreground/80">
-        0 = full range · 100 = maximum (shared by all charts)
+        0 = full timeline · 100 = maximum (shared by all charts)
       </span>
     </div>
   )

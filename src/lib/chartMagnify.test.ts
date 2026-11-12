@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  getMagnifiedAxisRange,
+  getMagnificationWindow,
   magnificationToVisiblePercent,
   magnificationToZoomFactor,
   normalizeMagnification,
@@ -22,7 +22,7 @@ describe('normalizeMagnification', () => {
 })
 
 describe('magnification scale', () => {
-  it('maps 0 to the full range and 100 to maximum zoom', () => {
+  it('maps 0 to the full timeline and 100 to maximum zoom', () => {
     expect(magnificationToVisiblePercent(0)).toBe(100)
     expect(magnificationToVisiblePercent(50)).toBe(50)
     expect(magnificationToVisiblePercent(100)).toBe(1)
@@ -35,29 +35,23 @@ describe('magnification scale', () => {
   })
 })
 
-describe('getMagnifiedAxisRange', () => {
-  it('returns no explicit bounds when magnification is off', () => {
-    expect(getMagnifiedAxisRange([10, 20], 0)).toEqual({})
+describe('getMagnificationWindow', () => {
+  it('shows the full timeline when magnification is off', () => {
+    expect(getMagnificationWindow(0)).toEqual({ start: 0, end: 100 })
   })
 
-  it('zooms around the midpoint of the data', () => {
-    const range = getMagnifiedAxisRange([10, 20], 50)
-    expect(range.min).toBeCloseTo(12.4)
-    expect(range.max).toBeCloseTo(17.6)
+  it('shrinks the time window as magnification rises', () => {
+    expect(getMagnificationWindow(50)).toEqual({ start: 50, end: 100 })
+    expect(getMagnificationWindow(95)).toEqual({ start: 95, end: 100 })
   })
 
-  it('narrows the window as magnification rises', () => {
-    const halfRange = getMagnifiedAxisRange([10, 20], 50)
-    const fullMagnification = getMagnifiedAxisRange([10, 20], 100)
-    expect((fullMagnification.max ?? 0) - (fullMagnification.min ?? 0)).toBeLessThan(
-      (halfRange.max ?? 0) - (halfRange.min ?? 0),
-    )
-    expect(fullMagnification.min).toBeGreaterThan(14.9)
-    expect(fullMagnification.max).toBeLessThan(15.1)
+  it('keeps the latest data visible at every level', () => {
+    for (const level of [0, 5, 25, 50, 75, 95, 100]) {
+      expect(getMagnificationWindow(level).end).toBe(100)
+    }
   })
 
-  it('ignores missing values and handles flat series', () => {
-    expect(getMagnifiedAxisRange([null, 5, undefined, Number.NaN, 5], 50)).toEqual({})
-    expect(getMagnifiedAxisRange([null, undefined], 50)).toEqual({})
+  it('never collapses the window to zero', () => {
+    expect(getMagnificationWindow(100)).toEqual({ start: 99, end: 100 })
   })
 })

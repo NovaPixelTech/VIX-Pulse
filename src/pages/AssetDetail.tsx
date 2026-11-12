@@ -27,7 +27,7 @@ import {
 import { Skeleton } from '@/components/Skeleton'
 import ChartMagnifySlider from '@/components/ChartMagnifySlider'
 import VixResponsePanel from '@/components/VixResponsePanel'
-import { getMagnifiedAxisRange, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
+import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import {
   loadThreshold,
   saveThreshold,
@@ -228,18 +228,7 @@ export default function AssetDetail() {
   const recoveryPositiveColor = theme === 'dark' ? '#4ade80' : '#15803d'
   const recoveryNegativeColor = theme === 'dark' ? '#f87171' : '#b91c1c'
   const currentAssetNumber = assetIndex + 1
-  const vixAxisRange = getMagnifiedAxisRange(
-    [
-      ...chartVix,
-      ...annotationPoints.map(({ peak }) => peak.vixPeakValue),
-      ...highPeakPoints.map(({ peak }) => peak.vixPeakValue),
-    ],
-    magnification,
-  )
-  const priceAxisRange = getMagnifiedAxisRange(
-    [...chartPrices, ...(showMovingAverages ? [...fourWeekMovingAverage, ...thirteenWeekMovingAverage] : [])],
-    magnification,
-  )
+  const timeWindow = getMagnificationWindow(magnification)
 
   const goToAsset = (target: Asset) => {
     navigate(`/asset/${target.isin}`, {
@@ -310,7 +299,6 @@ export default function AssetDetail() {
         axisLabel: { color: vixColor },
         splitLine: { lineStyle: { color: chart.border } },
         scale: true,
-        ...vixAxisRange,
       },
       {
         type: 'value',
@@ -321,17 +309,17 @@ export default function AssetDetail() {
         axisLabel: { color: assetColor },
         splitLine: { show: false },
         scale: true,
-        ...priceAxisRange,
       },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0 },
+      { type: 'inside', xAxisIndex: 0, ...timeWindow },
       {
         type: 'slider',
         bottom: 0,
         height: 20,
         borderColor: chart.border,
         textStyle: { color: chart.muted },
+        ...timeWindow,
       },
     ],
     series: [

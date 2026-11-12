@@ -9,8 +9,8 @@ const STORAGE_KEY = 'chart-magnification'
 
 /**
  * The slider is a 0–100 magnification scale in steps of 5. 0 leaves the chart
- * at its normal (full-range) vertical scale; 100 shows only the middle 1% of
- * the vertical range (100× zoom).
+ * at its full time range; 100 shows only the latest 1% of the timeline
+ * (100× zoom).
  */
 export function normalizeMagnification(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_MAGNIFICATION
@@ -34,35 +34,14 @@ export function saveChartMagnification(value: number) {
   saveThreshold(STORAGE_KEY, normalizeMagnification(value))
 }
 
-type AxisRange = { min?: number; max?: number }
+type TimeWindow = { start: number; end: number }
 
 /**
- * Returns explicit y-axis bounds that zoom the vertical scale around the
- * midpoint of the data. Every chart uses the same magnification value, so the
- * visible share of each chart's own vertical extent is identical.
+ * Returns the dataZoom percentages for the selected magnification. The window
+ * is anchored to the latest data, so every chart compares the same share of
+ * its timeline at any given magnification level.
  */
-export function getMagnifiedAxisRange(
-  values: ReadonlyArray<number | null | undefined>,
-  magnification: number,
-): AxisRange {
-  const normalized = normalizeMagnification(magnification)
-  if (normalized === MAGNIFY_MIN) return {}
-
-  let dataMin = Infinity
-  let dataMax = -Infinity
-  for (const value of values) {
-    if (value === null || value === undefined || !Number.isFinite(value)) continue
-    if (value < dataMin) dataMin = value
-    if (value > dataMax) dataMax = value
-  }
-  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMin === dataMax) return {}
-
-  const center = (dataMin + dataMax) / 2
-  const fullSpan = dataMax - dataMin
-  const visibleSpan = fullSpan * (magnificationToVisiblePercent(normalized) / 100)
-  // A small margin keeps the lines just inside the plot area at high zoom.
-  const padding = visibleSpan * 0.02
-  const halfSpan = visibleSpan / 2 + padding
-
-  return { min: center - halfSpan, max: center + halfSpan }
+export function getMagnificationWindow(magnification: number): TimeWindow {
+  const visiblePercent = magnificationToVisiblePercent(magnification)
+  return { start: 100 - visiblePercent, end: 100 }
 }

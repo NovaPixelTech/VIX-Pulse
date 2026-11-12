@@ -5,7 +5,7 @@ import ChartMagnifySlider from '@/components/ChartMagnifySlider'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useTheme } from '@/hooks/useTheme'
-import { getMagnifiedAxisRange, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
+import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { formatCurrency, formatDate, formatPercent, formatNumber, getChartTheme } from '@/lib/utils'
 import { deriveVixMetrics, getVixRegime, getWeeklyStats } from '@/lib/vix'
 
@@ -85,11 +85,7 @@ export default function Compare() {
       ),
     }
   })
-  const indexedRange = getMagnifiedAxisRange(
-    normalizedSeries.flatMap((series) => series.data),
-    magnification,
-  )
-  const vixRange = getMagnifiedAxisRange(weeklyVix, magnification)
+  const timeWindow = getMagnificationWindow(magnification)
 
   const option = {
     backgroundColor: 'transparent',
@@ -144,7 +140,6 @@ export default function Compare() {
         axisLabel: { color: chart.muted },
         splitLine: { lineStyle: { color: chart.border } },
         scale: true,
-        ...indexedRange,
       },
       {
         type: 'value',
@@ -155,17 +150,17 @@ export default function Compare() {
         axisLabel: { color: VIX_COLOR },
         splitLine: { show: false },
         scale: true,
-        ...vixRange,
       },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0 },
+      { type: 'inside', xAxisIndex: 0, ...timeWindow },
       {
         type: 'slider',
         bottom: 0,
         height: 20,
         borderColor: chart.border,
         textStyle: { color: chart.muted },
+        ...timeWindow,
       },
     ],
     series: [
