@@ -5,7 +5,7 @@
 ### Added
 
 - Shared 0–100 magnification slider that zooms the chart time axis on Asset Detail and Compare, with the setting remembered between visits.
-- Pattern search on Asset Detail and Compare charts: drag a region with the chart brush, then highlight every similar period in the same series with a distinct colour, confidence label, and adjustable match threshold.
+- Pattern search on Asset Detail and Compare charts: drag a region with the chart brush, then highlight every historical period where **both** the asset and VIX lines repeat the selected region, with a distinct colour, confidence label, and adjustable match threshold. The confidence shown is the weaker of the two line matches, so a period that matches only one line is rejected.
 
 ### Fixed
 

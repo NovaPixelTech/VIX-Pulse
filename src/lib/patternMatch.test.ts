@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { findSimilarPatterns, MIN_PATTERN_LENGTH } from './patternMatch'
+import { findJointSimilarPatterns, findSimilarPatterns, MIN_PATTERN_LENGTH } from './patternMatch'
 
 const PATTERN = [1, 3, 2, 5, 4, 6]
 const FILLER = [9, 12, 8, 14, 10, 15, 11, 13]
+const VIX_PATTERN = [10, 14, 11, 18, 13, 20]
+const VIX_FILLER = [21, 12, 19, 11, 22, 15, 17, 13]
 
 function overlaps(
   left: { startIndex: number; endIndex: number },
@@ -83,5 +85,122 @@ describe('findSimilarPatterns', () => {
 
     // The clamped selection covers the whole chart, so there is nothing left to compare.
     expect(matches).toEqual([])
+  })
+})
+
+describe('findJointSimilarPatterns', () => {
+  const repeatStart = PATTERN.length + FILLER.length
+
+  it('reports a period only when both lines repeat their selected shapes', () => {
+    const asset = [...PATTERN, ...FILLER, ...PATTERN]
+    const vix = [...VIX_PATTERN, ...VIX_FILLER, ...VIX_PATTERN.map((value) => value * 2 + 3)]
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.999,
+    })
+
+    const repeat = matches.find((match) => match.startIndex === repeatStart)
+    expect(repeat).toBeDefined()
+    expect(repeat?.endIndex).toBe(asset.length - 1)
+    expect(repeat?.seriesScores).toHaveLength(2)
+    expect(repeat?.seriesScores.every((score) => score > 0.999)).toBe(true)
+  })
+
+  it('rejects a period where only the asset repeats', () => {
+    const asset = [...PATTERN, ...FILLER, ...PATTERN]
+    const vix = [...VIX_PATTERN, ...VIX_FILLER, ...[...VIX_PATTERN].reverse()]
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.9,
+    })
+
+    expect(matches.some((match) => match.startIndex === repeatStart)).toBe(false)
+  })
+
+  it('rejects a period where only the VIX line repeats', () => {
+    const asset = [...PATTERN, ...FILLER, ...[...PATTERN].reverse()]
+    const vix = [...VIX_PATTERN, ...VIX_FILLER, ...VIX_PATTERN]
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.9,
+    })
+
+    expect(matches.some((match) => match.startIndex === repeatStart)).toBe(false)
+  })
+
+  it('uses the weakest line as the combined score', () => {
+    const asset = [...PATTERN, ...FILLER, ...PATTERN]
+    const vixRepeat = [...VIX_PATTERN]
+    vixRepeat[vixRepeat.length - 1] += 1
+    const vix = [...VIX_PATTERN, ...VIX_FILLER, ...vixRepeat]
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.9,
+    })
+
+    const repeat = matches.find((match) => match.startIndex === repeatStart)
+    expect(repeat).toBeDefined()
+    expect(repeat?.score).toBe(Math.min(...repeat!.seriesScores))
+    expect(repeat!.seriesScores[0]).toBeGreaterThan(repeat!.seriesScores[1])
+  })
+
+  it('returns non-overlapping matches and respects maxMatches', () => {
+    const asset = [...PATTERN, ...FILLER, ...PATTERN, ...FILLER, ...PATTERN, ...FILLER, ...PATTERN]
+    const vix = [
+      ...VIX_PATTERN,
+      ...VIX_FILLER,
+      ...VIX_PATTERN,
+      ...VIX_FILLER,
+      ...VIX_PATTERN,
+      ...VIX_FILLER,
+      ...VIX_PATTERN,
+    ]
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.999,
+      maxMatches: 2,
+    })
+
+    expect(matches).toHaveLength(2)
+    for (let index = 0; index < matches.length; index += 1) {
+      for (let other = index + 1; other < matches.length; other += 1) {
+        expect(overlaps(matches[index], matches[other])).toBe(false)
+      }
+    }
+  })
+
+  it('skips candidate windows where any line has a gap', () => {
+    const asset = [...PATTERN, ...FILLER, ...PATTERN]
+    const vix: Array<number | null> = [...VIX_PATTERN, ...VIX_FILLER, ...VIX_PATTERN]
+    vix[PATTERN.length + 2] = null
+    const matches = findJointSimilarPatterns([asset, vix], 0, PATTERN.length - 1, {
+      threshold: 0.999,
+    })
+
+    expect(matches.some((match) => match.startIndex === repeatStart)).toBe(true)
+    expect(
+      matches.every(
+        (match) => !(match.startIndex <= PATTERN.length + 2 && match.endIndex >= PATTERN.length + 2),
+      ),
+    ).toBe(true)
+  })
+
+  it('returns nothing for flat selections, empty input, or mismatched lengths', () => {
+    expect(
+      findJointSimilarPatterns(
+        [
+          [5, 5, 5, 5, 5, 5],
+          [1, 2, 3, 4, 5, 6],
+        ],
+        0,
+        4,
+      ),
+    ).toEqual([])
+    expect(findJointSimilarPatterns([], 0, 4)).toEqual([])
+    expect(
+      findJointSimilarPatterns(
+        [
+          [1, 2, 3, 4, 5, 6],
+          [1, 2, 3],
+        ],
+        0,
+        4,
+      ),
+    ).toEqual([])
   })
 })

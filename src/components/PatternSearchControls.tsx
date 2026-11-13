@@ -54,8 +54,11 @@ export default function PatternSearchControls({
         </span>
 
         {seriesOptions.length > 1 && (
-          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            Series
+          <label
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Choose which asset is paired with VIX for the pattern search"
+          >
+            Pair
             <select
               value={seriesKey}
               onChange={(event) => onSeriesChange(event.target.value)}

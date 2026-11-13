@@ -36,7 +36,7 @@ import PatternSearchControls, {
 } from '@/components/PatternSearchControls'
 import VixResponsePanel from '@/components/VixResponsePanel'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
-import { findSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
+import { findJointSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
 import { getBrushSelection } from '@/lib/chartBrush'
 import {
   loadThreshold,
@@ -48,7 +48,7 @@ import {
 } from '@/lib/settingsStorage'
 
 const PATTERN_DEFAULT_MESSAGE =
-  'Select a region on the chart, then click Find similar to highlight matching periods.'
+  'Select a region on the chart, then click Find similar to highlight periods where both the asset and VIX match.'
 
 interface PatternSelection {
   startIndex: number
@@ -84,7 +84,6 @@ export default function AssetDetail() {
   const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
   const [showMovingAverages, setShowMovingAverages] = useState(false)
   const [magnification, setMagnification] = useState(loadChartMagnification)
-  const [matchSeriesKey, setMatchSeriesKey] = useState('asset')
   const [patternSelection, setPatternSelection] = useState<PatternSelection | null>(null)
   const [patternMatches, setPatternMatches] = useState<PatternMatch[]>([])
   const [patternMessage, setPatternMessage] = useState(PATTERN_DEFAULT_MESSAGE)
@@ -273,14 +272,15 @@ export default function AssetDetail() {
   const recoveryNegativeColor = theme === 'dark' ? '#f87171' : '#b91c1c'
   const currentAssetNumber = assetIndex + 1
   const timeWindow = getMagnificationWindow(magnification)
-  const matchSeriesOptions = [
+  // A pattern is always the pair of lines in the brushed region: the asset and
+  // VIX. Both must match, so the search is never reduced to a single series.
+  const patternSeries = [
     {
       key: 'asset',
       label: asset.ticker,
       data: chartPrices,
       yAxisIndex: 1,
       smooth: false,
-      color: assetColor,
     },
     {
       key: 'vix',
@@ -288,11 +288,10 @@ export default function AssetDetail() {
       data: chartVix,
       yAxisIndex: 0,
       smooth: false,
-      color: vixColor,
     },
   ]
-  const activeMatchSeries =
-    matchSeriesOptions.find((series) => series.key === matchSeriesKey) ?? matchSeriesOptions[0]
+  const patternPairLabel = `${asset.ticker} + VIX`
+  const patternSeriesOptions = [{ key: 'asset-vix', label: patternPairLabel }]
   const patternMatchColor = theme === 'dark' ? PATTERN_MATCH_DARK_COLOR : PATTERN_MATCH_COLOR
   const patternSelectionColor = theme === 'dark' ? PATTERN_SELECTION_DARK_COLOR : PATTERN_SELECTION_COLOR
   const patternSelectionInScope =
@@ -312,9 +311,10 @@ export default function AssetDetail() {
       patternMatchIndices.add(index)
     }
   }
-  const highlightedPatternData = activeMatchSeries
-    ? activeMatchSeries.data.map((value, index) => (patternMatchIndices.has(index) ? value : null))
-    : []
+  const highlightedPatternSeries = patternSeries.map((series) => ({
+    ...series,
+    data: series.data.map((value, index) => (patternMatchIndices.has(index) ? value : null)),
+  }))
 
   const resetPatternSearch = () => {
     setPatternSelection(null)
@@ -341,7 +341,7 @@ export default function AssetDetail() {
     setPatternMessage(
       `Selected ${formatShortDate(dates[startIndex])} – ${formatShortDate(
         dates[endIndex],
-      )}. Click Find similar to search the full chart.`,
+      )}. Click Find similar to find periods where both ${asset.ticker} and VIX match.`,
     )
     setSelectingPattern(false)
   }
@@ -358,35 +358,38 @@ export default function AssetDetail() {
     chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
   }
 
-  const handleMatchSeriesChange = (key: string) => {
-    setMatchSeriesKey(key)
-    resetPatternSearch()
-  }
-
   const handleFindSimilar = () => {
-    if (!patternSelectionInScope || !activeMatchSeries) return
+    if (!patternSelectionInScope) return
 
     const { startIndex, endIndex } = patternSelectionInScope
-    const values = activeMatchSeries.data
-    if (startIndex < 0 || endIndex >= values.length) {
+    if (patternSeries.some((series) => startIndex < 0 || endIndex >= series.data.length)) {
       setPatternMatches([])
       setPatternMessage('That selection is no longer available. Select a region again.')
       return
     }
 
-    const selectedValues = values.slice(startIndex, endIndex + 1)
-    if (selectedValues.some((value) => value === null || value === undefined || !Number.isFinite(value))) {
+    const hasGap = patternSeries.some((series) =>
+      series.data
+        .slice(startIndex, endIndex + 1)
+        .some((value) => value === null || value === undefined || !Number.isFinite(value)),
+    )
+    if (hasGap) {
       setPatternMatches([])
-      setPatternMessage('The selected region contains gaps. Choose a continuous period.')
+      setPatternMessage(
+        `The selected region contains gaps in ${patternPairLabel}. Choose a continuous period.`,
+      )
       return
     }
 
-    const matches = findSimilarPatterns(values, startIndex, endIndex, {
-      threshold: patternThreshold,
-    })
+    const matches = findJointSimilarPatterns(
+      patternSeries.map((series) => series.data),
+      startIndex,
+      endIndex,
+      { threshold: patternThreshold },
+    )
     setPatternMatches(matches)
 
-    const lastIndex = Math.max(0, values.length - 1)
+    const lastIndex = Math.max(0, patternSeries[0].data.length - 1)
     const visibleStart = Math.floor((timeWindow.start / 100) * lastIndex)
     const visibleEnd = Math.ceil((timeWindow.end / 100) * lastIndex)
     const offscreenMatches = matches.filter(
@@ -401,15 +404,15 @@ export default function AssetDetail() {
 
     if (matches.length === 0) {
       setPatternMessage(
-        `No similar periods found for ${activeMatchSeries.label} at ${Math.round(
+        `No similar periods found for ${patternPairLabel} at ${Math.round(
           patternThreshold * 100,
-        )}% or higher.`,
+        )}% or higher. Both lines must match.`,
       )
     } else {
       setPatternMessage(
         `Found ${matches.length} similar ${matches.length === 1 ? 'period' : 'periods'} for ${
-          activeMatchSeries.label
-        } (≥${Math.round(patternThreshold * 100)}% match).${zoomNote}`,
+          patternPairLabel
+        } (both lines ≥${Math.round(patternThreshold * 100)}%).${zoomNote}`,
       )
     }
   }
@@ -722,7 +725,7 @@ export default function AssetDetail() {
             {
               name: 'Selected pattern',
               type: 'line',
-              yAxisIndex: activeMatchSeries?.yAxisIndex ?? 0,
+              yAxisIndex: 0,
               data: [],
               silent: true,
               lineStyle: { opacity: 0 },
@@ -748,40 +751,42 @@ export default function AssetDetail() {
             },
           ]
         : []),
-      ...(effectivePatternMatches.length > 0 && activeMatchSeries
-        ? [
-            {
-              name: 'Similar patterns',
-              type: 'line',
-              yAxisIndex: activeMatchSeries.yAxisIndex,
-              data: highlightedPatternData,
-              smooth: activeMatchSeries.smooth,
-              showSymbol: false,
-              connectNulls: false,
-              silent: true,
-              lineStyle: { color: patternMatchColor, width: 5 },
-              itemStyle: { color: patternMatchColor },
-              z: 20,
-              markArea: {
-                silent: true,
-                label: {
-                  show: true,
-                  position: 'insideTop',
-                  color: patternMatchColor,
-                  fontSize: 10,
-                  fontWeight: 600,
-                },
-                data: effectivePatternMatches.map((match) => [
-                  {
-                    name: `${Math.round(match.score * 100)}%`,
-                    xAxis: dates[match.startIndex],
-                    itemStyle: { color: PATTERN_MATCH_BAND_COLOR },
+      ...(effectivePatternMatches.length > 0
+        ? patternSeries.map((series, seriesIndex) => ({
+            name: seriesIndex === 0 ? 'Similar patterns' : 'Similar patterns (VIX)',
+            type: 'line',
+            yAxisIndex: series.yAxisIndex,
+            data: highlightedPatternSeries[seriesIndex].data,
+            smooth: series.smooth,
+            showSymbol: false,
+            connectNulls: false,
+            silent: true,
+            lineStyle: { color: patternMatchColor, width: 5 },
+            itemStyle: { color: patternMatchColor },
+            z: 20,
+            ...(seriesIndex === 0
+              ? {
+                  markArea: {
+                    silent: true,
+                    label: {
+                      show: true,
+                      position: 'insideTop',
+                      color: patternMatchColor,
+                      fontSize: 10,
+                      fontWeight: 600,
+                    },
+                    data: effectivePatternMatches.map((match) => [
+                      {
+                        name: `${Math.round(match.score * 100)}%`,
+                        xAxis: dates[match.startIndex],
+                        itemStyle: { color: PATTERN_MATCH_BAND_COLOR },
+                      },
+                      { xAxis: dates[match.endIndex] },
+                    ]),
                   },
-                  { xAxis: dates[match.endIndex] },
-                ]),
-              },
-            },
-          ]
+                }
+              : {}),
+          }))
         : []),
     ],
   }
@@ -961,9 +966,9 @@ export default function AssetDetail() {
         </div>
         <div className="mb-4 border-b border-border pb-3">
           <PatternSearchControls
-            seriesOptions={matchSeriesOptions.map(({ key, label }) => ({ key, label }))}
-            seriesKey={activeMatchSeries?.key ?? ''}
-            onSeriesChange={handleMatchSeriesChange}
+            seriesOptions={patternSeriesOptions}
+            seriesKey={patternSeriesOptions[0].key}
+            onSeriesChange={() => {}}
             selecting={selectingPattern}
             onToggleSelecting={handleToggleSelecting}
             selectionLabel={patternSelectionLabel}

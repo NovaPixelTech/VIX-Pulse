@@ -85,7 +85,7 @@ describe('PatternSearchControls', () => {
     expect(onClear).toHaveBeenCalledTimes(1)
   })
 
-  it('lists every series and reports series changes', () => {
+  it('lists every pair option and reports pair changes', () => {
     const onSeriesChange = vi.fn()
     render({
       seriesOptions: [
