@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Shared 0–100 magnification slider that zooms the chart time axis on Asset Detail and Compare, with the setting remembered between visits.
+- Pattern search on Asset Detail and Compare charts: drag a region with the chart brush, then highlight every similar period in the same series with a distinct colour, confidence label, and adjustable match threshold.
+
 ## v0.4.0 - 2026-11-11
 
 ### Added

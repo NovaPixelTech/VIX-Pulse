@@ -26,8 +26,17 @@ import {
 } from '@/lib/vixResponse'
 import { Skeleton } from '@/components/Skeleton'
 import ChartMagnifySlider from '@/components/ChartMagnifySlider'
+import PatternSearchControls, {
+  PATTERN_MATCH_BAND_COLOR,
+  PATTERN_MATCH_COLOR,
+  PATTERN_MATCH_DARK_COLOR,
+  PATTERN_SELECTION_BAND_COLOR,
+  PATTERN_SELECTION_COLOR,
+  PATTERN_SELECTION_DARK_COLOR,
+} from '@/components/PatternSearchControls'
 import VixResponsePanel from '@/components/VixResponsePanel'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
+import { findSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
 import {
   loadThreshold,
   saveThreshold,
@@ -36,6 +45,15 @@ import {
   formatDateInput,
   formatDisplayDate,
 } from '@/lib/settingsStorage'
+
+const PATTERN_DEFAULT_MESSAGE =
+  'Select a region on the chart, then click Find similar to highlight matching periods.'
+
+interface PatternSelection {
+  startIndex: number
+  endIndex: number
+  scope: string
+}
 
 export default function AssetDetail() {
   const { isin } = useParams()
@@ -65,6 +83,14 @@ export default function AssetDetail() {
   const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
   const [showMovingAverages, setShowMovingAverages] = useState(false)
   const [magnification, setMagnification] = useState(loadChartMagnification)
+  const [matchSeriesKey, setMatchSeriesKey] = useState('asset')
+  const [patternSelection, setPatternSelection] = useState<PatternSelection | null>(null)
+  const [patternMatches, setPatternMatches] = useState<PatternMatch[]>([])
+  const [patternMessage, setPatternMessage] = useState(PATTERN_DEFAULT_MESSAGE)
+  const [patternThreshold, setPatternThreshold] = useState(0.85)
+  const [selectingPattern, setSelectingPattern] = useState(false)
+  const chartRef = useRef<ReactECharts>(null)
+  const patternScope = `${asset?.isin ?? ''}|${analysisFrom}|${analysisTo}`
   const dateRange = { from: analysisFrom || undefined, to: analysisTo || undefined }
 
   useEffect(() => saveThreshold('peak-threshold', peakThreshold), [peakThreshold])
@@ -72,6 +98,23 @@ export default function AssetDetail() {
   useEffect(() => saveDate('analysis-from', analysisFrom), [analysisFrom])
   useEffect(() => saveDate('analysis-to', analysisTo), [analysisTo])
   useEffect(() => saveChartMagnification(magnification), [magnification])
+
+  useEffect(() => {
+    const instance = chartRef.current?.getEchartsInstance()
+    if (!instance) return
+    instance.dispatchAction({
+      type: 'takeGlobalCursor',
+      key: 'brush',
+      brushOption: {
+        brushType: selectingPattern ? 'lineX' : false,
+        brushMode: 'single',
+      },
+    })
+  }, [selectingPattern])
+
+  useEffect(() => {
+    chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
+  }, [patternScope])
   const hasDailyVix = Boolean(
     data?.dailyVix &&
     data.dailyVix.dates.length > 0 &&
@@ -229,8 +272,155 @@ export default function AssetDetail() {
   const recoveryNegativeColor = theme === 'dark' ? '#f87171' : '#b91c1c'
   const currentAssetNumber = assetIndex + 1
   const timeWindow = getMagnificationWindow(magnification)
+  const matchSeriesOptions = [
+    {
+      key: 'asset',
+      label: asset.ticker,
+      data: chartPrices,
+      yAxisIndex: 1,
+      smooth: false,
+      color: assetColor,
+    },
+    {
+      key: 'vix',
+      label: 'VIX',
+      data: chartVix,
+      yAxisIndex: 0,
+      smooth: false,
+      color: vixColor,
+    },
+  ]
+  const activeMatchSeries =
+    matchSeriesOptions.find((series) => series.key === matchSeriesKey) ?? matchSeriesOptions[0]
+  const patternMatchColor = theme === 'dark' ? PATTERN_MATCH_DARK_COLOR : PATTERN_MATCH_COLOR
+  const patternSelectionColor = theme === 'dark' ? PATTERN_SELECTION_DARK_COLOR : PATTERN_SELECTION_COLOR
+  const patternSelectionInScope =
+    patternSelection && patternSelection.scope === patternScope ? patternSelection : null
+  const effectivePatternMatches = patternSelectionInScope ? patternMatches : []
+  const patternStatusMessage =
+    patternSelection && patternSelection.scope !== patternScope ? PATTERN_DEFAULT_MESSAGE : patternMessage
+  const patternSelectionLabel = patternSelectionInScope
+    ? `${formatShortDate(dates[patternSelectionInScope.startIndex])} – ${formatShortDate(
+        dates[patternSelectionInScope.endIndex],
+      )} · ${patternSelectionInScope.endIndex - patternSelectionInScope.startIndex + 1} periods`
+    : null
+
+  const patternMatchIndices = new Set<number>()
+  for (const match of effectivePatternMatches) {
+    for (let index = match.startIndex; index <= match.endIndex; index += 1) {
+      patternMatchIndices.add(index)
+    }
+  }
+  const highlightedPatternData = activeMatchSeries
+    ? activeMatchSeries.data.map((value, index) => (patternMatchIndices.has(index) ? value : null))
+    : []
+
+  const resetPatternSearch = () => {
+    setPatternSelection(null)
+    setPatternMatches([])
+    setPatternMessage(PATTERN_DEFAULT_MESSAGE)
+    setSelectingPattern(false)
+    chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
+  }
+
+  const handlePatternBrushSelected = (params: unknown) => {
+    const selected = (params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }).batch?.[0]
+      ?.selected
+    const indices = new Set<number>()
+    for (const entry of selected ?? []) {
+      for (const index of entry.dataIndex ?? []) indices.add(index)
+    }
+    if (indices.size === 0) return
+
+    const startIndex = Math.min(...indices)
+    const endIndex = Math.max(...indices)
+    if (endIndex - startIndex + 1 < MIN_PATTERN_LENGTH) {
+      setPatternSelection(null)
+      setPatternMatches([])
+      setPatternMessage(`Select at least ${MIN_PATTERN_LENGTH} consecutive periods.`)
+      return
+    }
+
+    setPatternSelection({ startIndex, endIndex, scope: patternScope })
+    setPatternMatches([])
+    setPatternMessage(
+      `Selected ${formatShortDate(dates[startIndex])} – ${formatShortDate(
+        dates[endIndex],
+      )}. Click Find similar to search the full chart.`,
+    )
+    setSelectingPattern(false)
+  }
+
+  const handleToggleSelecting = () => {
+    if (selectingPattern) {
+      setSelectingPattern(false)
+      return
+    }
+    setPatternSelection(null)
+    setPatternMatches([])
+    setPatternMessage('Drag across the chart to select the start and end of the pattern.')
+    setSelectingPattern(true)
+    chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
+  }
+
+  const handleMatchSeriesChange = (key: string) => {
+    setMatchSeriesKey(key)
+    resetPatternSearch()
+  }
+
+  const handleFindSimilar = () => {
+    if (!patternSelectionInScope || !activeMatchSeries) return
+
+    const { startIndex, endIndex } = patternSelectionInScope
+    const values = activeMatchSeries.data
+    if (startIndex < 0 || endIndex >= values.length) {
+      setPatternMatches([])
+      setPatternMessage('That selection is no longer available. Select a region again.')
+      return
+    }
+
+    const selectedValues = values.slice(startIndex, endIndex + 1)
+    if (selectedValues.some((value) => value === null || value === undefined || !Number.isFinite(value))) {
+      setPatternMatches([])
+      setPatternMessage('The selected region contains gaps. Choose a continuous period.')
+      return
+    }
+
+    const matches = findSimilarPatterns(values, startIndex, endIndex, {
+      threshold: patternThreshold,
+    })
+    setPatternMatches(matches)
+
+    const lastIndex = Math.max(0, values.length - 1)
+    const visibleStart = Math.floor((timeWindow.start / 100) * lastIndex)
+    const visibleEnd = Math.ceil((timeWindow.end / 100) * lastIndex)
+    const offscreenMatches = matches.filter(
+      (match) => match.endIndex < visibleStart || match.startIndex > visibleEnd,
+    ).length
+    const zoomNote =
+      offscreenMatches > 0
+        ? ` ${offscreenMatches} ${
+            offscreenMatches === 1 ? 'match is' : 'matches are'
+          } outside the current zoom window.`
+        : ''
+
+    if (matches.length === 0) {
+      setPatternMessage(
+        `No similar periods found for ${activeMatchSeries.label} at ${Math.round(
+          patternThreshold * 100,
+        )}% or higher.`,
+      )
+    } else {
+      setPatternMessage(
+        `Found ${matches.length} similar ${matches.length === 1 ? 'period' : 'periods'} for ${
+          activeMatchSeries.label
+        } (≥${Math.round(patternThreshold * 100)}% match).${zoomNote}`,
+      )
+    }
+  }
 
   const goToAsset = (target: Asset) => {
+    resetPatternSearch()
     navigate(`/asset/${target.isin}`, {
       state: { assetOrder: orderedAssets.map((candidate) => candidate.isin) },
     })
@@ -253,6 +443,20 @@ export default function AssetDetail() {
       borderColor: chart.tooltipBorder,
       textStyle: { color: chart.text },
       axisPointer: { type: 'cross' },
+    },
+    brush: {
+      xAxisIndex: 0,
+      brushType: 'lineX',
+      brushMode: 'single',
+      transformable: false,
+      throttleType: 'debounce',
+      throttleDelay: 250,
+      removeOnClick: false,
+      brushStyle: {
+        borderColor: patternSelectionColor,
+        borderWidth: 1,
+        color: PATTERN_SELECTION_BAND_COLOR,
+      },
     },
     legend: {
       type: 'scroll',
@@ -312,7 +516,7 @@ export default function AssetDetail() {
       },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0, ...timeWindow },
+      { type: 'inside', xAxisIndex: 0, ...timeWindow, disabled: selectingPattern },
       {
         type: 'slider',
         bottom: 0,
@@ -518,6 +722,72 @@ export default function AssetDetail() {
         },
         z: 6,
       },
+      ...(patternSelectionInScope
+        ? [
+            {
+              name: 'Selected pattern',
+              type: 'line',
+              yAxisIndex: activeMatchSeries?.yAxisIndex ?? 0,
+              data: [],
+              silent: true,
+              lineStyle: { opacity: 0 },
+              itemStyle: { opacity: 0 },
+              z: 18,
+              markArea: {
+                silent: true,
+                label: {
+                  show: true,
+                  position: 'insideTop',
+                  color: patternSelectionColor,
+                  fontSize: 10,
+                  fontWeight: 600,
+                },
+                itemStyle: { color: PATTERN_SELECTION_BAND_COLOR },
+                data: [
+                  [
+                    { name: 'Selected', xAxis: dates[patternSelectionInScope.startIndex] },
+                    { xAxis: dates[patternSelectionInScope.endIndex] },
+                  ],
+                ],
+              },
+            },
+          ]
+        : []),
+      ...(effectivePatternMatches.length > 0 && activeMatchSeries
+        ? [
+            {
+              name: 'Similar patterns',
+              type: 'line',
+              yAxisIndex: activeMatchSeries.yAxisIndex,
+              data: highlightedPatternData,
+              smooth: activeMatchSeries.smooth,
+              showSymbol: false,
+              connectNulls: false,
+              silent: true,
+              lineStyle: { color: patternMatchColor, width: 5 },
+              itemStyle: { color: patternMatchColor },
+              z: 20,
+              markArea: {
+                silent: true,
+                label: {
+                  show: true,
+                  position: 'insideTop',
+                  color: patternMatchColor,
+                  fontSize: 10,
+                  fontWeight: 600,
+                },
+                data: effectivePatternMatches.map((match) => [
+                  {
+                    name: `${Math.round(match.score * 100)}%`,
+                    xAxis: dates[match.startIndex],
+                    itemStyle: { color: PATTERN_MATCH_BAND_COLOR },
+                  },
+                  { xAxis: dates[match.endIndex] },
+                ]),
+              },
+            },
+          ]
+        : []),
     ],
   }
 
@@ -694,11 +964,34 @@ export default function AssetDetail() {
         <div className="mb-4 border-b border-border pb-3">
           <ChartMagnifySlider value={magnification} onChange={setMagnification} />
         </div>
+        <div className="mb-4 border-b border-border pb-3">
+          <PatternSearchControls
+            seriesOptions={matchSeriesOptions.map(({ key, label }) => ({ key, label }))}
+            seriesKey={activeMatchSeries?.key ?? ''}
+            onSeriesChange={handleMatchSeriesChange}
+            selecting={selectingPattern}
+            onToggleSelecting={handleToggleSelecting}
+            selectionLabel={patternSelectionLabel}
+            threshold={patternThreshold}
+            onThresholdChange={setPatternThreshold}
+            matchCount={effectivePatternMatches.length}
+            onFindSimilar={handleFindSimilar}
+            onClear={resetPatternSearch}
+            message={patternStatusMessage}
+          />
+        </div>
         <div
           role="img"
           aria-label={`${asset.ticker} ${hasDailyData ? 'daily' : 'weekly'} price and VIX chart with ${highPeakPoints.length} VIX peaks above ${peakThreshold}, ${safeResponse.cycles.length} grouped recovery cycles, and 4-week and 13-week moving averages`}
         >
-          <ReactECharts option={option} style={{ height: '480px' }} opts={{ renderer: 'svg' }} notMerge />
+          <ReactECharts
+            ref={chartRef}
+            option={option}
+            style={{ height: '480px' }}
+            opts={{ renderer: 'svg' }}
+            onEvents={{ brushSelected: handlePatternBrushSelected }}
+            notMerge
+          />
         </div>
       </div>
       <div
@@ -811,6 +1104,7 @@ export default function AssetDetail() {
               onChange={(event) => {
                 const parsed = formatDateInput(event.target.value)
                 if (parsed) {
+                  resetPatternSearch()
                   setAnalysisFrom(parsed)
                   saveDate('analysis-from', parsed)
                 }
@@ -824,6 +1118,7 @@ export default function AssetDetail() {
               onChange={(event) => {
                 const parsed = event.target.value
                 if (parsed) {
+                  resetPatternSearch()
                   setAnalysisFrom(parsed)
                   saveDate('analysis-from', parsed)
                 }
@@ -839,6 +1134,7 @@ export default function AssetDetail() {
               onChange={(event) => {
                 const parsed = formatDateInput(event.target.value)
                 if (parsed) {
+                  resetPatternSearch()
                   setAnalysisTo(parsed)
                   saveDate('analysis-to', parsed)
                 }
@@ -852,6 +1148,7 @@ export default function AssetDetail() {
               onChange={(event) => {
                 const parsed = event.target.value
                 if (parsed) {
+                  resetPatternSearch()
                   setAnalysisTo(parsed)
                   saveDate('analysis-to', parsed)
                 }
