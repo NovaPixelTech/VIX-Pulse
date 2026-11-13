@@ -37,6 +37,7 @@ import PatternSearchControls, {
 import VixResponsePanel from '@/components/VixResponsePanel'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { findSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
+import { getBrushSelection } from '@/lib/chartBrush'
 import {
   loadThreshold,
   saveThreshold,
@@ -323,17 +324,11 @@ export default function AssetDetail() {
     chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
   }
 
-  const handlePatternBrushSelected = (params: unknown) => {
-    const selected = (params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }).batch?.[0]
-      ?.selected
-    const indices = new Set<number>()
-    for (const entry of selected ?? []) {
-      for (const index of entry.dataIndex ?? []) indices.add(index)
-    }
-    if (indices.size === 0) return
+  const handlePatternBrushEnd = (params: unknown) => {
+    const selection = getBrushSelection(params, dates)
+    if (!selection) return
 
-    const startIndex = Math.min(...indices)
-    const endIndex = Math.max(...indices)
+    const { startIndex, endIndex } = selection
     if (endIndex - startIndex + 1 < MIN_PATTERN_LENGTH) {
       setPatternSelection(null)
       setPatternMatches([])
@@ -989,7 +984,7 @@ export default function AssetDetail() {
             option={option}
             style={{ height: '480px' }}
             opts={{ renderer: 'svg' }}
-            onEvents={{ brushSelected: handlePatternBrushSelected }}
+            onEvents={{ brushEnd: handlePatternBrushEnd }}
             notMerge
           />
         </div>

@@ -15,6 +15,7 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { useTheme } from '@/hooks/useTheme'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { findSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
+import { getBrushSelection } from '@/lib/chartBrush'
 import {
   formatCurrency,
   formatDate,
@@ -169,17 +170,11 @@ export default function Compare() {
     ? activeMatchSeries.data.map((value, index) => (patternMatchIndices.has(index) ? value : null))
     : []
 
-  const handlePatternBrushSelected = (params: unknown) => {
-    const selected = (params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }).batch?.[0]
-      ?.selected
-    const indices = new Set<number>()
-    for (const entry of selected ?? []) {
-      for (const index of entry.dataIndex ?? []) indices.add(index)
-    }
-    if (indices.size === 0) return
+  const handlePatternBrushEnd = (params: unknown) => {
+    const selection = getBrushSelection(params, chartDates)
+    if (!selection) return
 
-    const startIndex = Math.min(...indices)
-    const endIndex = Math.max(...indices)
+    const { startIndex, endIndex } = selection
     if (endIndex - startIndex + 1 < MIN_PATTERN_LENGTH) {
       setPatternSelection(null)
       setPatternMatches([])
@@ -613,7 +608,7 @@ export default function Compare() {
             option={option}
             style={{ height: '520px' }}
             opts={{ renderer: 'svg' }}
-            onEvents={{ brushSelected: handlePatternBrushSelected }}
+            onEvents={{ brushEnd: handlePatternBrushEnd }}
             notMerge
           />
         </div>
