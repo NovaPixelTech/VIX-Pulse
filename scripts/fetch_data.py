@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from custom_asset_registry import load_custom_assets
@@ -30,6 +31,19 @@ VIX_THRESHOLD_RECOVERY = 20.0
 LOOKBACK_YEARS = 6
 OUTPUT = Path(__file__).resolve().parent.parent / "public" / "data" / "vix-pulse.json"
 CUSTOM_ASSETS_FILE = Path(__file__).resolve().parent / "custom_assets.json"
+
+# Market context used by the executable event study and regime dashboard.
+BENCHMARK_TICKER = "SPY"
+BENCHMARK_NAME = "SPDR S&P 500 ETF Trust"
+TERM_STRUCTURE_TICKERS = {
+    "vix9d": "^VIX9D",
+    "vix3m": "^VIX3M",
+    "vix6m": "^VIX6M",
+}
+FX_TICKERS = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+}
 
 # ISIN, display ticker, name, type, currency, exchange, Yahoo Finance ticker
 ASSETS: list[tuple[str, str, str, str, str, str, str]] = [
@@ -207,6 +221,58 @@ def fetch_daily(ticker: str, start: datetime, end: datetime) -> pd.DataFrame | N
         except Exception as exc:  # pragma: no cover - network dependent
             print(f"  ! {candidate}: {exc}")
     return None
+
+
+def align_close_to_dates(frame: pd.DataFrame | None, dates: pd.DatetimeIndex) -> list[float | None]:
+    """Align a close series to the VIX calendar, carrying the last close forward."""
+    if frame is None or frame.empty or "Close" not in frame:
+        return [None] * len(dates)
+    series = frame["Close"].astype(float)
+    # Drop duplicate index labels before reindexing so a malformed feed cannot
+    # make the alignment ambiguous.
+    series = series[~series.index.duplicated(keep="last")]
+    aligned = series.reindex(dates).ffill()
+    return [None if pd.isna(value) else round(float(value), 6) for value in aligned.to_numpy()]
+
+
+def build_market_context(
+    vix_daily: pd.DataFrame, start: datetime, end: datetime
+) -> dict[str, object]:
+    """Download the benchmark, VIX term structure, and FX rates for the same window."""
+    dates = vix_daily.index
+    date_strings = [d.strftime("%Y-%m-%d") for d in dates]
+
+    print("Downloading benchmark, VIX term structure, and FX context...")
+    benchmark = fetch_daily(BENCHMARK_TICKER, start, end)
+    benchmark_close = align_close_to_dates(benchmark, dates)
+
+    term_structure: dict[str, object] = {"dates": date_strings}
+    for key, ticker in TERM_STRUCTURE_TICKERS.items():
+        frame = fetch_daily(ticker, start, end)
+        term_structure[key] = align_close_to_dates(frame, dates)
+    # Reuse the already downloaded VIX close so the term structure is internally
+    # consistent even if the extra Yahoo request fails.
+    term_structure["vix"] = [
+        None if pd.isna(value) else round(float(value), 6)
+        for value in vix_daily["Close"].astype(float).to_numpy()
+    ]
+
+    fx: dict[str, object] = {"dates": date_strings}
+    for key, ticker in FX_TICKERS.items():
+        frame = fetch_daily(ticker, start, end)
+        fx[key] = align_close_to_dates(frame, dates)
+
+    return {
+        "benchmark": {
+            "ticker": BENCHMARK_TICKER,
+            "name": BENCHMARK_NAME,
+            "currency": "USD",
+            "dates": date_strings,
+            "close": benchmark_close,
+        },
+        "termStructure": term_structure,
+        "fx": fx,
+    }
 
 
 def last_closed_friday(today: date) -> date:
@@ -432,6 +498,34 @@ def simulate_daily(index: pd.DatetimeIndex, seed_name: str) -> pd.DataFrame:
     )
 
 
+def enrich_context_only() -> None:
+    """Refresh only the benchmark, term structure, and FX context in an existing payload."""
+    if not OUTPUT.exists():
+        raise SystemExit(f"No published payload found at {OUTPUT}")
+    payload = json.loads(OUTPUT.read_text(encoding="utf-8"))
+    daily = payload.get("dailyVix")
+    if not daily or not daily.get("dates") or not daily.get("close"):
+        raise SystemExit("The published payload has no daily VIX series to enrich")
+
+    dates = pd.to_datetime(daily["dates"])
+    vix_daily = pd.DataFrame(
+        {
+            "High": daily.get("high", daily["close"]),
+            "Close": daily["close"],
+        },
+        index=dates,
+    )
+    start = (dates[0] - pd.Timedelta(days=2)).to_pydatetime()
+    end = (dates[-1] + pd.Timedelta(days=2)).to_pydatetime()
+    payload.update(build_market_context(vix_daily, start, end))
+    payload["contextUpdatedAt"] = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
+    with OUTPUT.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False, allow_nan=False)
+    print(f"Updated market context in {OUTPUT}")
+
+
 def main() -> None:
     today = date.today()
     end = datetime.combine(today + timedelta(days=1), datetime.min.time())
@@ -480,6 +574,7 @@ def main() -> None:
     weekly_vix = [round(float(v), 2) for v in weekly_vix_series.to_numpy()]
 
     vix_peaks = find_vix_peaks(vix_daily)
+    market_context = build_market_context(vix_daily, start, end)
     print(f"Detected {len(vix_peaks)} VIX peaks; weekly window {weekly_dates[0]} -> {weekly_dates[-1]}")
 
     asset_catalog, custom_price_divisors = load_asset_catalog()
@@ -513,6 +608,7 @@ def main() -> None:
         "vixThresholdRecovery": VIX_THRESHOLD_RECOVERY,
         "dateRange": {"from": weekly_dates[0], "to": weekly_dates[-1]},
         "vixMetrics": vix_metrics,
+        **market_context,
         "dailyVix": {
             "dates": [d.strftime("%Y-%m-%d") for d in vix_daily.index],
             "high": [round(float(value), 4) for value in vix_daily["High"].astype(float).to_numpy()],
@@ -535,4 +631,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--context-only" in sys.argv:
+        enrich_context_only()
+    else:
+        main()

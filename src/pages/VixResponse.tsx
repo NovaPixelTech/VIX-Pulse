@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Search, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, ArrowRight, Search, Target, TrendingDown, TrendingUp } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { CardSkeleton, TableSkeleton } from '@/components/Skeleton'
@@ -133,8 +133,8 @@ export default function VixResponse() {
   const { data, loading, error } = useData()
   usePageTitle('VIX Response Ranking')
   const [search, setSearch] = useState('')
-  const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', '2025-09-01'))
-  const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
+  const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', ''))
+  const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', ''))
   const [peakThreshold, setPeakThreshold] = useState(() =>
     loadThreshold('peak-threshold', VIX_RESPONSE_PEAK_THRESHOLD),
   )
@@ -143,6 +143,10 @@ export default function VixResponse() {
   )
   const [sortKey, setSortKey] = useState<SortKey>('rebound')
   const [sortAsc, setSortAsc] = useState(false)
+  const boundsFrom = data?.dailyVix?.dates[0] ?? data?.dateRange.from ?? ''
+  const boundsTo = data ? (data.dailyVix?.dates[data.dailyVix.dates.length - 1] ?? data.dateRange.to) : ''
+  const effectiveFrom = analysisFrom || boundsFrom
+  const effectiveTo = analysisTo || boundsTo
 
   useEffect(() => saveThreshold('peak-threshold', peakThreshold), [peakThreshold])
   useEffect(() => saveThreshold('recovery-threshold', recoveryThreshold), [recoveryThreshold])
@@ -212,6 +216,15 @@ export default function VixResponse() {
     }
   }
 
+  const applyFullHistory = () => {
+    if (!data) return
+    const dates = data.dailyVix?.dates ?? []
+    const from = dates[0] ?? data.dateRange.from
+    const to = dates[dates.length - 1] ?? data.dateRange.to
+    setAnalysisFrom(from)
+    setAnalysisTo(to)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6" role="status" aria-label="Loading VIX response ranking">
@@ -241,18 +254,35 @@ export default function VixResponse() {
             <Activity className="h-6 w-6" aria-hidden="true" />
           </div>
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-primary">VIX response</p>
+            <p className="text-sm font-medium uppercase tracking-wide text-primary">
+              VIX response · hindsight explorer
+            </p>
             <h1 className="text-3xl font-bold sm:text-4xl">VIX peak-to-recovery response</h1>
           </div>
         </div>
         <p className="max-w-4xl text-muted-foreground">
           Compare asset price changes after every daily VIX local high strictly above{' '}
           {peakThreshold.toFixed(1)}, through the first daily VIX close below {recoveryThreshold.toFixed(1)}.
-          The default table order is descending signed average peak-to-recovery return, matching the supplied
-          comparison. Average absolute price movement is shown separately and is not a performance ranking.
+          Every peak is confirmed using the following day, and the peak-to-recovery return starts at the peak
+          close. Those are deliberate hindsight measurements: they describe what happened, not what you could
+          have captured. The default table order is descending signed average peak-to-recovery return.
         </p>
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+          <Target className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+            Want entry and exit rules you could actually follow? Edge Lab enters at the next close after the
+            VIX signal, charges costs, converts FX, and subtracts the SPY return over the same window.
+          </p>
+          <Link
+            to="/edge"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            Open Edge Lab
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        </div>
         <p className="text-sm text-muted-foreground">
-          Report window {formatDate(analysisFrom)} – {formatDate(analysisTo)} · {distinctCycles} recovery
+          Report window {formatDate(effectiveFrom)} – {formatDate(effectiveTo)} · {distinctCycles} recovery
           windows ·{' '}
           {data.dailyVix
             ? `daily VIX highs; ${dailyAssetPriceCount}/${ranked.length} daily closes; ${dailyCoMovementCount}/${ranked.length} correlation samples`
@@ -319,7 +349,7 @@ export default function VixResponse() {
           <span className="font-medium">Analysis start date</span>
           <input
             type="text"
-            value={formatDisplayDate(analysisFrom)}
+            value={formatDisplayDate(effectiveFrom)}
             onChange={(event) => {
               const parsed = formatDateInput(event.target.value)
               if (parsed) {
@@ -332,7 +362,7 @@ export default function VixResponse() {
           />
           <input
             type="date"
-            value={analysisFrom}
+            value={effectiveFrom}
             onChange={(event) => {
               const parsed = event.target.value
               if (parsed) {
@@ -347,7 +377,7 @@ export default function VixResponse() {
           <span className="font-medium">Analysis end date</span>
           <input
             type="text"
-            value={formatDisplayDate(analysisTo)}
+            value={formatDisplayDate(effectiveTo)}
             onChange={(event) => {
               const parsed = formatDateInput(event.target.value)
               if (parsed) {
@@ -360,7 +390,7 @@ export default function VixResponse() {
           />
           <input
             type="date"
-            value={analysisTo}
+            value={effectiveTo}
             onChange={(event) => {
               const parsed = event.target.value
               if (parsed) {
@@ -371,6 +401,20 @@ export default function VixResponse() {
             className="block w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm"
           />
         </label>
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-4">
+          <button
+            type="button"
+            onClick={applyFullHistory}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            Use full history
+          </button>
+          <span className="text-xs text-muted-foreground">
+            Resets the window to {formatDate(data.dailyVix?.dates[0] ?? data.dateRange.from)} –{' '}
+            {formatDate(data.dailyVix?.dates[data.dailyVix.dates.length - 1] ?? data.dateRange.to)}. Older
+            browsers may still hold the original one-year report window; it is ignored automatically.
+          </span>
+        </div>
       </section>
 
       <section
@@ -523,7 +567,7 @@ export default function VixResponse() {
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Rank</th>
                       <th className="p-3 text-left text-xs font-medium text-muted-foreground">Asset</th>
                       <SortHeader
-                        label="Abs-move percentile"
+                        label="Move-size percentile (descriptive)"
                         column="magnitudeScore"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
@@ -558,49 +602,42 @@ export default function VixResponse() {
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Avg rebound"
-                        column="rebound"
-                        sortKey={sortKey}
-                        sortAsc={sortAsc}
-                        onSort={toggleSort}
-                      />
-                      <SortHeader
-                        label="Mean peak-to-recovery change"
+                        label="Mean peak→recovery change (hindsight)"
                         column="meanRebound"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Max peak-to-recovery change"
+                        label="Max peak→recovery change (hindsight)"
                         column="maxRebound"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Best index overall"
+                        label="Composite score (descriptive)"
                         column="bestIndex"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Positive rebounds"
+                        label="Positive peak→recovery returns (hindsight)"
                         column="recoveryRate"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Avg cycle P/L"
+                        label="Hindsight cycle P/L (baseline→recovery)"
                         column="cycleReturn"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
                         onSort={toggleSort}
                       />
                       <SortHeader
-                        label="Days to regain baseline"
+                        label="Days to regain baseline (hindsight)"
                         column="baselineRecoveryDays"
                         sortKey={sortKey}
                         sortAsc={sortAsc}
@@ -660,11 +697,6 @@ export default function VixResponse() {
                         </td>
                         <td className="p-3 text-right font-mono">
                           {formatMagnitudePercent(item.stats.drawdownPct.average)}
-                        </td>
-                        <td
-                          className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.average)}`}
-                        >
-                          {formatPercent(item.stats.reboundPct.average)}
                         </td>
                         <td
                           className={`p-3 text-right font-mono ${returnClass(item.stats.reboundPct.average)}`}

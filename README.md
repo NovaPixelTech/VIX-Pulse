@@ -5,10 +5,12 @@ A client-side dashboard for exploring how stocks, ETFs, ETCs, and ADRs behaved a
 ## Features
 
 - **Live VIX banner**: A large regime-coloured live VIX value at the top of the dashboard, refreshed about once a minute from Yahoo Finance with an intraday sparkline, a 10–40 level gauge, day change, and market status; it falls back to the published snapshot when the live relay is unreachable.
+- **Edge Lab**: Executable event study. The VIX crossing is the signal, entry is the next observed close, and exit is VIX recovery, a close-based stop, or a maximum holding period. Every trade is benchmarked against SPY, converted into USD/EUR/GBP, charged two-way costs, and summarised with a bootstrap confidence interval, median, profit factor, MAE/MFE, exposure, and a full trade log.
+- **Market regime panel**: Current VIX level and percentile, 1-day and 5-day changes, VIX9D/VIX/VIX3M/VIX6M term structure with contango/backwardation classification, and SPY 20-session realised volatility.
 - **Dashboard**: Global ranking of all published assets, search, sortable metrics, latest available daily asset quotes, weekly closes, and a prominent current/last-week VIX overview.
-- **Asset Detail**: Latest asset quote and daily move plus an aligned daily VIX/price chart when available, grouped green/red VIX recovery periods, rebound arrows, moving averages, per-peak response metrics, time-axis magnification, and pattern search that highlights historical periods where both the asset and VIX lines repeat the selected region.
-- **VIX Response**: Searchable, sortable ranking for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
-- **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart, time-axis magnification, pattern search pairing each asset with VIX, and a benchmark row.
+- **Asset Detail**: Latest asset quote and daily move plus an aligned daily VIX/price chart when available, grouped green/red VIX recovery periods, rebound arrows, moving averages, per-peak response metrics, time-axis magnification, and pattern search that highlights historical periods where both the asset and VIX lines repeat the selected region. Matches are followed by forward-return outcomes versus the unconditional baseline and an approximate false-match estimate.
+- **VIX Response**: Searchable, sortable hindsight explorer for individual daily VIX local highs above 21. The default order is by signed mean peak-to-recovery return; separate average-move and daily VIX co-movement metrics are shown.
+- **Compare**: Select up to 10 assets. VIX is always included on a second axis, with a weekly normalised performance chart, time-axis magnification, pattern search pairing each asset with VIX, forward-return outcomes, and a benchmark row.
 - **VIX regimes**: Low (`< 15`), Normal (`15 – < 20`), Elevated (`20 – < 30`), and High (`≥ 30`).
 - **Local custom assets**: Download a Yahoo Finance daily CSV directly in the dashboard, upload a different CSV, and include the asset in the same VIX analysis. Custom data is stored only in the current browser and can be removed from the dashboard.
 - **Dark/Light Mode**: Theme toggle with localStorage persistence and a no-flash initial theme.
@@ -58,14 +60,16 @@ python scripts/fetch_data.py
 
 The pipeline:
 
-1. Downloads six years of daily `^VIX` and catalog asset history with `yfinance`.
+1. Downloads six years of daily `^VIX`, `^VIX9D`, `^VIX3M`, `^VIX6M`, SPY, and EURUSD/GBPUSD context with `yfinance`.
 2. Finds VIX peak days from daily Highs strictly above 21, with both neighbouring trading-day highs lower.
 3. Finds the first recovery day at or after the peak where the VIX close is below 20.
 4. Calculates asset closes, percent change, days to recovery, and per-asset summaries.
 5. Builds aligned Friday week-ending series for assets and VIX.
 6. Captures the latest daily VIX close plus previous-day and previous-week moves.
 7. Captures the latest available daily asset close and previous-session move for all tracked assets.
-8. Aligns daily adjusted asset closes to the VIX trading calendar, normalises London pence quotes to pounds, and writes `public/data/vix-pulse.json`.
+8. Aligns daily adjusted asset closes, benchmark, term-structure, and FX series to the VIX trading calendar, normalises London pence quotes to pounds, and writes `public/data/vix-pulse.json`.
+
+Use `python scripts/fetch_data.py --context-only` to refresh only the benchmark, term-structure, and FX context without rebuilding the whole asset snapshot.
 
 `python scripts/generate_data.py` is an offline/placeholder utility and is not used for the published dataset.
 
@@ -87,10 +91,10 @@ The workflow in `.github/workflows/deploy.yml` builds on every push to `main`, r
 
 ```text
 src/
-  components/     Layout, skeletons, live VIX banner, VIX overview, response metrics
+  components/     Layout, skeletons, live VIX banner, VIX overview, regime and pattern-outcome panels
   hooks/          static-data loader, live VIX poller, theme provider
-  lib/            calculations, VIX response analytics, live quote fetching, navigation, formatting, tests
-  pages/          Dashboard, Asset Detail, Compare, VIX Response, About
+  lib/            calculations, executable edge, market context, pattern outcomes, VIX response analytics, tests
+  pages/          Dashboard, Asset Detail, Compare, Edge Lab, VIX Response, About
 public/data/      generated static dataset
 scripts/          Yahoo data pipeline, public custom-asset catalog, and offline generators
 ```
@@ -101,11 +105,13 @@ scripts/          Yahoo data pipeline, public custom-asset catalog, and offline 
 - Asset Detail plots daily event markers on their exact dates; Compare and long-range charts retain weekly data.
 - The supplied report's local-high rule is used: daily VIX High strictly above 21, higher than both adjacent trading-day Highs; recovery is the first daily VIX Close below 20 on or after the peak date. For an asset holiday, its latest close on or before the VIX observation is used (never a future price).
 - Asset Detail charts and tables use the same individual daily events and the same selectable date window. Grouped recovery cycles are used only for chart shading; summary averages use every qualifying individual peak.
-- The default report window reproduces the supplied script's yfinance range (start 2025-09-01, exclusive end 2026-09-15; thus observations through 2026-09-14). Users can change or clear the date bounds. Price series are Yahoo Finance auto-adjusted closes, which may differ from Digrin or other providers.
+- The default analysis window is the full published history. The old one-year report window (2025-09-01 to 2026-09-14) is treated as unset, and **Use full history** resets the window anywhere. Price series are Yahoo Finance auto-adjusted closes, which may differ from Digrin or other providers.
+- Edge Lab uses the first VIX close crossing strictly above the threshold as the signal, enters at the next observed asset close, and exits at the next observed close after VIX closes below the recovery threshold, at a close-based stop, or after the maximum holding period. Trades do not overlap. Asset and benchmark returns are converted to one base currency at entry and exit and charged the same two-way cost. The study ignores intraday stops, taxes, borrow costs, market impact, and survivorship; the effective number of independent volatility episodes is much smaller than the trade count.
+- The dashboard regime panel reports VIX percentile over a rolling 756-session lookback, 1-day and 5-day changes, the VIX9D/VIX/VIX3M/VIX6M curve, and SPY 20-session realised volatility. Backwardation is VIX/VIX3M > 1.0; contango is < 0.95; values in between are labelled flat. These are descriptive filters, not forecasts.
 - The VIX Response table defaults to descending signed average peak-to-recovery return, matching the supplied comparison. A separate 0–100 magnitude score ranks average absolute price movement; it is not a performance score or causal measure of VIX sensitivity.
 - Local custom assets align dated closes to the shared VIX calendar and use the same event calculations. Download Yahoo Finance daily CSVs in the dashboard or upload them with `Date` and `Adj Close`/`Close` columns; the importer prefers adjusted close, and dashboard downloads normalise London pence prices to pounds. The local asset and its dated history are stored in this browser only. Yahoo requests cannot be made directly from the static site because of browser CORS restrictions, so the dashboard download uses Jina AI Reader as a read-only relay. To add an asset to the shared public catalog without a provider key, run the repository's GitHub Actions workflow; it downloads with `yfinance` and commits the generated snapshot. That shared path requires repository write access.
 - Daily VIX co-movement is Pearson correlation between asset close-to-close percentage returns and VIX close point changes; a regression slope (% asset return per VIX point) is also shown. Only adjacent common sessions with real asset closes are used. Forward-filled holidays are excluded. These estimates are descriptive, not causal.
-- Pattern search compares z-normalised windows of the same length as the brushed selection using Pearson correlation. The selected asset and VIX lines are matched together: each is normalised independently, and a period is reported only when both meet the chosen threshold. The displayed confidence is the weaker of the two line correlations, so a period that matches only the asset or only VIX is rejected. Scale and level differences therefore do not prevent a match, and windows that overlap the selection are excluded. Searches run over the currently displayed lines and loaded history.
+- Pattern search compares z-normalised windows of the same length as the brushed selection using Pearson correlation. The selected asset and VIX lines are matched together: each is normalised independently, and a period is reported only when both meet the chosen threshold. The displayed confidence is the weaker of the two line correlations, so a period that matches only the asset or only VIX is rejected. Scale and level differences therefore do not prevent a match, and windows that overlap the selection are excluded. Searches run over the currently displayed lines and loaded history. Forward outcomes from each match are compared with every eligible window in the same chart, and an approximate false-match probability accounts for the pattern length, threshold, and number of candidate windows. A short high-correlation pattern can match by chance; treat a pattern as evidence only when its forward edge clears that noise and costs.
 - Current VIX and asset quote cards use the latest quote included in the generated snapshot and display its date. Weekly chart history remains aligned to completed Friday closes.
 - The dashboard's live VIX banner polls the Yahoo Finance `^VIX` chart endpoint about once a minute through the same Jina AI Reader relay used by the browser CSV download (read-only; only the `^VIX` symbol is sent, with no API key). Polling pauses while the tab is hidden. The live quote can lag the exchange by a few minutes, the banner shows its quote time in the exchange time zone, and it falls back to the published snapshot when the relay is unreachable. Market status is derived from the reported session end plus a recently updating quote, because Yahoo does not publish a market flag for the index chart.
 - Baselines, moving averages, and time to regain baseline are weekly-close estimates; peak-to-recovery returns use daily closes.

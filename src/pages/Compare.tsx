@@ -13,6 +13,7 @@ import PatternSearchControls, {
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { useTheme } from '@/hooks/useTheme'
+import PatternOutcomePanel from '@/components/PatternOutcomePanel'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { findJointSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
 import { getBrushSelection } from '@/lib/chartBrush'
@@ -637,6 +638,17 @@ export default function Compare() {
           />
         </div>
       </div>
+
+      {activeMatchAsset && patternMatches.length > 0 && (
+        <PatternOutcomePanel
+          values={activeMatchAsset.data}
+          matches={patternMatches}
+          threshold={patternThreshold}
+          seriesCount={2}
+          periodLabel="weeks"
+          assetLabel={activeMatchAsset.asset.ticker}
+        />
+      )}
 
       <div className="rounded-xl border border-border bg-card overflow-hidden card-glow">
         <div className="border-b border-border px-4 py-3">

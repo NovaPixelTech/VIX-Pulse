@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Moon, Sun, Activity, BarChart3, GitCompare, Info, RefreshCw } from 'lucide-react'
+import { Moon, Sun, Activity, BarChart3, GitCompare, Info, RefreshCw, Target } from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { useTheme } from '@/hooks/useTheme'
 
@@ -10,6 +10,7 @@ export default function Layout() {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: BarChart3 },
+    { path: '/edge', label: 'Edge Lab', icon: Target },
     { path: '/compare', label: 'Compare', icon: GitCompare },
     { path: '/response', label: 'Response', icon: Activity },
     { path: '/about', label: 'About', icon: Info },
@@ -112,7 +113,7 @@ export default function Layout() {
         className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl md:hidden"
         aria-label="Primary navigation"
       >
-        <div className="grid grid-cols-4">
+        <div className="grid grid-cols-5">
           {navItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.path)

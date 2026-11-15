@@ -4,8 +4,18 @@
 
 ### Added
 
+- **Edge Lab** page: executable VIX event study with next-observed-close entry, recovery/stop/time exits, no overlapping trades, two-way costs, USD/EUR/GBP conversion, SPY-relative excess return, bootstrap 95% confidence intervals, medians, profit factor, MAE/MFE, exposure, compounding, and a full per-trade log.
+- Market regime panel on the dashboard: VIX percentile, 1-day and 5-day changes, VIX9D/VIX/VIX3M/VIX6M term structure with contango/backwardation classification, and SPY 20-session realised volatility.
+- Dataset enrichment with SPY, VIX9D, VIX3M, VIX6M, EURUSD, and GBPUSD context plus `contextUpdatedAt`, and a `--context-only` pipeline mode.
+- Forward-return outcome tables after asset+VIX pattern matches, compared with the unconditional baseline, with an approximate false-match probability for the search.
 - Shared 0–100 magnification slider that zooms the chart time axis on Asset Detail and Compare, with the setting remembered between visits.
 - Pattern search on Asset Detail and Compare charts: drag a region with the chart brush, then highlight every historical period where **both** the asset and VIX lines repeat the selected region, with a distinct colour, confidence label, and adjustable match threshold. The confidence shown is the weaker of the two line matches, so a period that matches only one line is rejected.
+
+### Changed
+
+- Analysis windows default to the full published history; the legacy one-year report window is ignored, and **Use full history** resets the window on Asset Detail and VIX Response.
+- VIX Response is labelled a hindsight explorer, with descriptive metric names; the duplicate rebound column was removed.
+- Dashboard, About, and README explain executable methodology, costs, FX, benchmark comparison, term structure, and pattern-search noise.
 
 ### Fixed
 

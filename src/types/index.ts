@@ -59,6 +59,28 @@ export type AnalysisDateRange = {
   to?: string
 }
 
+export type BenchmarkSeries = {
+  ticker: string
+  name: string
+  currency: string
+  dates: string[]
+  close: Array<number | null>
+}
+
+export type TermStructureSeries = {
+  dates: string[]
+  vix: Array<number | null>
+  vix9d: Array<number | null>
+  vix3m: Array<number | null>
+  vix6m: Array<number | null>
+}
+
+export type FxSeries = {
+  dates: string[]
+  EURUSD: Array<number | null>
+  GBPUSD: Array<number | null>
+}
+
 export type VixMetrics = {
   currentVix: number
   currentDate: string
@@ -81,6 +103,10 @@ export type Dataset = {
   dateRange: { from: string; to: string }
   vixMetrics?: VixMetrics
   dailyVix?: DailyVixSeries
+  benchmark?: BenchmarkSeries
+  termStructure?: TermStructureSeries
+  fx?: FxSeries
+  contextUpdatedAt?: string
   assets: Asset[]
   customAssets?: Asset[]
 }

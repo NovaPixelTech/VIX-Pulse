@@ -35,6 +35,7 @@ import PatternSearchControls, {
   PATTERN_SELECTION_DARK_COLOR,
 } from '@/components/PatternSearchControls'
 import VixResponsePanel from '@/components/VixResponsePanel'
+import PatternOutcomePanel from '@/components/PatternOutcomePanel'
 import { getMagnificationWindow, loadChartMagnification, saveChartMagnification } from '@/lib/chartMagnify'
 import { findJointSimilarPatterns, MIN_PATTERN_LENGTH, type PatternMatch } from '@/lib/patternMatch'
 import { getBrushSelection } from '@/lib/chartBrush'
@@ -80,8 +81,8 @@ export default function AssetDetail() {
   const [recoveryThreshold, setRecoveryThreshold] = useState(() =>
     loadThreshold('recovery-threshold', VIX_RESPONSE_RECOVERY_THRESHOLD),
   )
-  const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', '2025-09-01'))
-  const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', '2026-09-14'))
+  const [analysisFrom, setAnalysisFrom] = useState(() => loadDate('analysis-from', ''))
+  const [analysisTo, setAnalysisTo] = useState(() => loadDate('analysis-to', ''))
   const [showMovingAverages, setShowMovingAverages] = useState(false)
   const [magnification, setMagnification] = useState(loadChartMagnification)
   const [patternSelection, setPatternSelection] = useState<PatternSelection | null>(null)
@@ -98,6 +99,11 @@ export default function AssetDetail() {
   useEffect(() => saveDate('analysis-from', analysisFrom), [analysisFrom])
   useEffect(() => saveDate('analysis-to', analysisTo), [analysisTo])
   useEffect(() => saveChartMagnification(magnification), [magnification])
+
+  const boundsFrom = data?.dailyVix?.dates[0] ?? data?.dateRange.from ?? ''
+  const boundsTo = data ? (data.dailyVix?.dates[data.dailyVix.dates.length - 1] ?? data.dateRange.to) : ''
+  const effectiveFrom = analysisFrom || boundsFrom
+  const effectiveTo = analysisTo || boundsTo
 
   useEffect(() => {
     const instance = chartRef.current?.getEchartsInstance()
@@ -324,6 +330,15 @@ export default function AssetDetail() {
     chartRef.current?.getEchartsInstance()?.dispatchAction({ type: 'brush', areas: [] })
   }
 
+  const applyFullHistory = () => {
+    if (!data) return
+    const fullHistoryDates = data.dailyVix?.dates ?? []
+    const from = fullHistoryDates[0] ?? data.dateRange.from
+    const to = fullHistoryDates[fullHistoryDates.length - 1] ?? data.dateRange.to
+    setAnalysisFrom(from)
+    setAnalysisTo(to)
+  }
+
   const handlePatternBrushEnd = (params: unknown) => {
     const selection = getBrushSelection(params, dates)
     if (!selection) return
@@ -429,7 +444,7 @@ export default function AssetDetail() {
     animationDuration: 500,
     title: {
       text: `${asset.ticker} vs VIX`,
-      subtext: `${hasDailyData ? 'Daily VIX and asset closes' : hasDailyVix ? 'Weekly asset closes; daily VIX peaks' : 'Weekly VIX and asset closes'} · ${formatDate(analysisFrom)} – ${formatDate(analysisTo)} · ${highPeakPoints.length} VIX > ${peakThreshold.toFixed(1)} peaks`,
+      subtext: `${hasDailyData ? 'Daily VIX and asset closes' : hasDailyVix ? 'Weekly asset closes; daily VIX peaks' : 'Weekly VIX and asset closes'} · ${formatDate(effectiveFrom)} – ${formatDate(effectiveTo)} · ${highPeakPoints.length} VIX > ${peakThreshold.toFixed(1)} peaks`,
       left: 0,
       top: 0,
       textStyle: { color: chart.text, fontSize: 16, fontWeight: 600 },
@@ -923,7 +938,7 @@ export default function AssetDetail() {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4 card-glow">
-          <p className="text-sm text-muted-foreground">Mean peak-to-recovery change</p>
+          <p className="text-sm text-muted-foreground">Mean peak→recovery change (hindsight)</p>
           <p
             className={`text-2xl font-bold font-mono ${(safeResponse.stats.reboundPct.average ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}
           >
@@ -931,7 +946,7 @@ export default function AssetDetail() {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4 card-glow">
-          <p className="text-sm text-muted-foreground">Maximum peak-to-recovery change</p>
+          <p className="text-sm text-muted-foreground">Max peak→recovery change (hindsight)</p>
           <p
             className={`text-2xl font-bold font-mono ${(safeResponse.stats.reboundPct.max ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}
           >
@@ -939,7 +954,7 @@ export default function AssetDetail() {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4 card-glow">
-          <p className="text-sm text-muted-foreground">Best index overall</p>
+          <p className="text-sm text-muted-foreground">Composite score (descriptive)</p>
           <p
             className={`text-2xl font-bold font-mono ${(currentBestIndex ?? 0) >= 50 ? 'text-success' : 'text-muted-foreground'}`}
           >
@@ -1021,6 +1036,15 @@ export default function AssetDetail() {
         </label>
       </div>
 
+      <PatternOutcomePanel
+        values={chartPrices}
+        matches={effectivePatternMatches}
+        threshold={patternThreshold}
+        seriesCount={2}
+        periodLabel={hasDailyData ? 'sessions' : 'weeks'}
+        assetLabel={asset.ticker}
+      />
+
       <div className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -1100,7 +1124,7 @@ export default function AssetDetail() {
             <span className="font-medium">Analysis start date</span>
             <input
               type="text"
-              value={formatDisplayDate(analysisFrom)}
+              value={formatDisplayDate(effectiveFrom)}
               onChange={(event) => {
                 const parsed = formatDateInput(event.target.value)
                 if (parsed) {
@@ -1114,7 +1138,7 @@ export default function AssetDetail() {
             />
             <input
               type="date"
-              value={analysisFrom}
+              value={effectiveFrom}
               onChange={(event) => {
                 const parsed = event.target.value
                 if (parsed) {
@@ -1130,7 +1154,7 @@ export default function AssetDetail() {
             <span className="font-medium">Analysis end date</span>
             <input
               type="text"
-              value={formatDisplayDate(analysisTo)}
+              value={formatDisplayDate(effectiveTo)}
               onChange={(event) => {
                 const parsed = formatDateInput(event.target.value)
                 if (parsed) {
@@ -1144,7 +1168,7 @@ export default function AssetDetail() {
             />
             <input
               type="date"
-              value={analysisTo}
+              value={effectiveTo}
               onChange={(event) => {
                 const parsed = event.target.value
                 if (parsed) {
@@ -1157,10 +1181,23 @@ export default function AssetDetail() {
             />
           </label>
         </div>
-        <p className="text-xs text-muted-foreground">
-          The initial window matches the supplied script&apos;s end-exclusive range (Sep 1, 2025 through Sep
-          14, 2026). Clear either date to include the full available history on that side.
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              resetPatternSearch()
+              applyFullHistory()
+            }}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+          >
+            Use full history
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Full history runs {formatDate(data!.dailyVix?.dates[0] ?? data!.dateRange.from)} –{' '}
+            {formatDate(data!.dailyVix?.dates[data!.dailyVix!.dates.length - 1] ?? data!.dateRange.to)}. The
+            original one-year report window in older browsers is ignored automatically.
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-border bg-background/50 p-3">
             <p className="text-xs text-muted-foreground">Individual VIX peaks</p>
@@ -1199,7 +1236,7 @@ export default function AssetDetail() {
       <section className="rounded-xl border border-border bg-card p-4 sm:p-6 card-glow space-y-3">
         <h2 className="text-xl font-bold">Data-based analysis &amp; conclusions</h2>
         <p className="text-sm text-muted-foreground">
-          For {asset.ticker} from {formatDate(analysisFrom)} to {formatDate(analysisTo)}, the analysis finds{' '}
+          For {asset.ticker} from {formatDate(effectiveFrom)} to {formatDate(effectiveTo)}, the analysis finds{' '}
           <strong className="text-foreground">{safeResponse.eventCount}</strong> individual{' '}
           {hasDailyVix ? 'daily' : 'weekly-fallback'} VIX local peaks above {peakThreshold.toFixed(1)}.{' '}
           {safeResponse.recoveredEventCount} have a VIX close below {recoveryThreshold.toFixed(1)} on or after

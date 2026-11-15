@@ -19,10 +19,18 @@ export function saveThreshold(key: string, value: number) {
   }
 }
 
+const LEGACY_DATE_DEFAULTS: Record<string, string[]> = {
+  // The original report window. Treat a stored copy of it as unset so existing
+  // browsers migrate to full history instead of keeping a one-year sample.
+  'analysis-from': ['2025-09-01'],
+  'analysis-to': ['2026-09-14'],
+}
+
 export function loadDate(key: string, defaultValue: string): string {
   try {
     if (typeof window === 'undefined') return defaultValue
     const raw = window.localStorage.getItem(`vix-date-${key}`)
+    if (raw && LEGACY_DATE_DEFAULTS[key]?.includes(raw)) return defaultValue
     return raw || defaultValue
   } catch {
     return defaultValue

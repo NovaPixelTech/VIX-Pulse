@@ -9,6 +9,7 @@ const AssetDetail = lazy(() => import('./pages/AssetDetail'))
 const Compare = lazy(() => import('./pages/Compare'))
 const About = lazy(() => import('./pages/About'))
 const VixResponse = lazy(() => import('./pages/VixResponse'))
+const EdgeLab = lazy(() => import('./pages/EdgeLab'))
 
 function RouteFallback() {
   return (
@@ -49,6 +50,14 @@ function App() {
                 element={
                   <Suspense fallback={<RouteFallback />}>
                     <VixResponse />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="edge"
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <EdgeLab />
                   </Suspense>
                 }
               />

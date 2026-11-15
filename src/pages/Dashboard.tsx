@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { PlusCircle, Search, TrendingUp, TrendingDown, BarChart3, ExternalLink, Download } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  PlusCircle,
+  Search,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  ExternalLink,
+  Download,
+  Target,
+  ArrowRight,
+} from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { cn, formatCurrency, formatDate, formatNumber, formatPercent, fuzzySearch } from '@/lib/utils'
@@ -8,6 +18,7 @@ import { getWeeklyStats } from '@/lib/vix'
 import { Skeleton, CardSkeleton, TableSkeleton } from '@/components/Skeleton'
 import RealtimeVixBanner from '@/components/RealtimeVixBanner'
 import VixOverview from '@/components/VixOverview'
+import MarketRegimePanel from '@/components/MarketRegimePanel'
 import type { Asset } from '@/types'
 import { createCustomAssetFromCsv, parseDailyPriceCsv } from '@/lib/customAssets'
 import { fetchYahooDailyCsv, type YahooCsvResult } from '@/lib/yahooCsv'
@@ -634,6 +645,30 @@ export default function Dashboard() {
       </div>
 
       <VixOverview data={data} />
+
+      <MarketRegimePanel data={data} />
+
+      <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 text-primary">
+            <Target className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="font-semibold">Want the executable version, not the hindsight ranking?</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Edge Lab enters at the next close after the VIX signal, exits on recovery, stop, or time, and
+              measures net excess return against SPY after costs and FX.
+            </p>
+          </div>
+        </div>
+        <Link
+          to="/edge"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          Open Edge Lab
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-card p-6 card-glow">

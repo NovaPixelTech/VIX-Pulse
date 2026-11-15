@@ -107,13 +107,12 @@ export default function About() {
           <h2 className="text-xl font-bold">VIX local-peak response analysis</h2>
         </div>
         <p className="text-sm">
-          The response report evaluates every daily VIX local high above 21, with recovery below 20. Its
-          initial reporting period matches the supplied yfinance range (Sep 1, 2025 through Sep 14, 2026;
-          yfinance&apos;s end date is exclusive) and can be edited. Baseline comparisons and moving-average
-          measures use weekly closes; peak-to-recovery returns use daily closes. The table defaults to
-          descending signed average peak-to-recovery return, matching the supplied comparison. The magnitude
-          score ranks average absolute moves separately. Grouping is only for chart shading, not event
-          averages.
+          The response report is a hindsight explorer: it evaluates every daily VIX local high above 21, with
+          recovery below 20, and reports what the asset did between those two points. It defaults to the full
+          published history and can be narrowed with the date controls. Baseline comparisons and
+          moving-average measures use weekly closes; peak-to-recovery returns use daily closes. The table
+          defaults to descending signed average peak-to-recovery return. The magnitude score ranks average
+          absolute moves separately. Grouping is only for chart shading, not event averages.
         </p>
         <ul className="list-disc space-y-2 pl-5 text-sm">
           <li>
@@ -189,6 +188,63 @@ export default function About() {
           The Compare page accepts up to ten assets. VIX is always plotted on a second axis and cannot be
           removed, so every asset comparison includes a volatility benchmark. VIX increases are shown in red
           and decreases in green, the inverse of asset performance colours.
+        </p>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6 card-glow space-y-4">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">Executable edge, benchmark and costs</h2>
+        </div>
+        <p className="text-sm">
+          Edge Lab replaces the hindsight peak-to-recovery window with rules that could be followed in real
+          time. The signal is the first daily VIX close that crosses strictly above the entry threshold from
+          at or below it. The entry is the next observed asset close, never the signal close. The trade exits
+          at the next observed close after VIX closes strictly below the recovery threshold, at a close-based
+          stop loss, or after a maximum holding period. Trades never overlap.
+        </p>
+        <ul className="list-disc space-y-2 pl-5 text-sm">
+          <li>
+            <strong>Net return</strong> = local adjusted close converted into the selected base currency at
+            entry and exit, then charged a two-way transaction cost (default 10 bps per side).
+          </li>
+          <li>
+            <strong>Excess return</strong> = net asset return minus the net return of SPY over the identical
+            entry-to-exit dates, converted and costed the same way.
+          </li>
+          <li>
+            <strong>95% bootstrap interval</strong> = resampled distribution of mean excess return. If it
+            straddles zero, the sample does not establish a reliable edge; the ranking sorts on the lower
+            bound so fragile small samples rank lower.
+          </li>
+          <li>
+            <strong>MAE / MFE</strong> = maximum adverse and favourable close-based excursion while the trade
+            was open. Use MAE to size positions realistically, not just to judge the average return.
+          </li>
+          <li>
+            <strong>Exposure</strong> = share of the analysis window spent holding the asset. High exposure
+            with low excess return usually means the benchmark would have done the job more cheaply.
+          </li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          This is an event study, not a broker fill simulation. It ignores intraday stops, borrow costs,
+          taxes, dividends beyond adjusted prices, market impact, and survivorship in the asset list. The
+          parameters are chosen with hindsight, and volatility episodes cluster, so the effective number of
+          independent bets is much smaller than the trade count. Treat a positive result as a hypothesis to
+          test forward.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          <strong>Current regime panel.</strong> The dashboard adds VIX percentile (share of the lookback at
+          or below today&apos;s close), 1-day and 5-day VIX changes, the VIX9D/VIX/VIX3M/VIX6M term structure,
+          and SPY 20-session realised volatility. Backwardation (VIX above VIX3M) marks acute stress; contango
+          is the calm-market default. These are filters and context, not entry triggers.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          <strong>Pattern outcomes.</strong> After you select a joint asset+VIX region, the app searches for
+          similar windows and reports the forward return from each match against every eligible window in the
+          same chart. It also estimates search noise: a short window with a high correlation threshold can
+          match by chance, especially across many candidate window positions. A pattern is evidence only when
+          its forward outcome beats the baseline by more than that noise and survives costs.
         </p>
       </section>
 
