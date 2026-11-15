@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Info, Shield, Target, TrendingDown, TrendingUp } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Info,
+  Shield,
+  Target,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react'
 import { useData } from '@/hooks/useData'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { CardSkeleton, TableSkeleton } from '@/components/Skeleton'
@@ -660,6 +669,81 @@ export default function EdgeLab() {
           dates, then a {costBps} bps cost is charged on entry and again on exit. The benchmark receives the
           same treatment. This is a research approximation, not a broker fill simulation.
         </p>
+      </section>
+
+      <section
+        className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+        aria-label="Confirmation indicators and decision checklist"
+      >
+        <div className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5 card-glow">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-primary" aria-hidden="true" />
+            <h2 className="font-semibold">Confirmation indicators</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            A signal is not an entry. Before acting, check whether the rest of the market is confirming the
+            same stress.
+          </p>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-start gap-2">
+              <TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+              <span>
+                <strong className="text-foreground">VIX 1-day vs 5-day change.</strong> A one-day spike is
+                different from a sustained five-day grind. Check whether the move is decelerating before
+                entry.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Activity className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                <strong className="text-foreground">SPY realised volatility vs VIX.</strong> A wide
+                implied-minus-realised gap means option protection is expensive; realised volatility catching
+                up is the risk.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                <strong className="text-foreground">Pattern outcome vs baseline.</strong> Only trust a pattern
+                if its forward mean beats the baseline by more than the displayed false-match noise.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+              <span>
+                <strong className="text-foreground">Number of matches.</strong> Fewer than five matches is
+                explicitly flagged as fragile in the app.
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5 card-glow">
+          <div className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" aria-hidden="true" />
+            <h2 className="font-semibold">Decision checklist</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Follow the same sequence every time so the decision does not drift with the last headline.
+          </p>
+          <ol className="space-y-3 text-sm">
+            {[
+              'Check the regime panel: is VIX genuinely stressed, and is the curve confirming it?',
+              'Open Edge Lab: choose your real currency, costs, and stop. Ignore any asset whose lower confidence bound is below zero.',
+              'Prefer assets with at least 5 trades, positive median excess, profit factor above 1.3, and an MAE you can sit through.',
+              'Size the position so the mean MAE is an ordinary drawdown, not an account-ending one.',
+              'Re-check the assumption panel at higher costs. If the edge disappears, it was never there.',
+              'Paper-trade the rule forward before risking size.',
+            ].map((step, index) => (
+              <li key={step} className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                  {index + 1}
+                </span>
+                <span className="text-muted-foreground">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
       </section>
     </div>
   )

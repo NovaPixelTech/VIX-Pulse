@@ -13,6 +13,7 @@
 
 ### Changed
 
+- Edge Lab now includes a confirmation-indicator panel and a six-step decision checklist covering VIX momentum, implied vs realised volatility, pattern-vs-baseline noise, minimum trades, confidence bounds, profit factor, MAE-based sizing, cost re-checks, and forward paper trading.
 - Analysis windows default to the full published history; the legacy one-year report window is ignored, and **Use full history** resets the window on Asset Detail and VIX Response.
 - VIX Response is labelled a hindsight explorer, with descriptive metric names; the duplicate rebound column was removed.
 - Dashboard, About, and README explain executable methodology, costs, FX, benchmark comparison, term structure, and pattern-search noise.
